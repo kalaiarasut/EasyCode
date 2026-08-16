@@ -1,0 +1,58 @@
+# External data sources & seed datasets (ignore entire directory)
+/data-sources/
+
+# Dependencies
+/node_modules/
+/.pnp/
+.pnp.*
+
+# Next.js & Build outputs
+/.next/
+/out/
+/build/
+/dist/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment variables & secrets
+.env*
+env.text
+*.pem
+*.key
+*.cert
+
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+.venv/
+env/
+venv/
+.pytest_cache/
+
+# Testing & Logs
+/coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Sandboxes, Temp & Caches
+/temp/
+/tmp/
+*.tmp
+*.cache
+
+# Archives & Databases
+*.gz
+*.tar
+*.zip
+*.sqlite*
+*.db
+
+# OS & IDE metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
