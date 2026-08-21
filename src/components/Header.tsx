@@ -32,9 +32,22 @@ export default function Header() {
     return null;
   }
 
+  // If on home or auth pages, render self-contained auth layout
+  if (
+    pathname === "/" ||
+    pathname.startsWith("/sign-in") ||
+    pathname.startsWith("/sign-up") ||
+    pathname.startsWith("/forget-password") ||
+    pathname.startsWith("/verify")
+  ) {
+    return null;
+  }
+
   return (
     <header className='w-full h-12 border-b-2 flex items-center justify-between px-8 relative z-30'>
-        {(theme === "dark") ? <img src="/navLogo dark.png" alt="" className='h-6' /> : <img src="/navLogo light.png" alt="" className='h-6' />}
+        <Link href="/" className="flex items-center hover:opacity-85 transition-opacity">
+          {(theme === "dark") ? <img src="/navLogo dark.png" alt="EasyCode" className='h-6' /> : <img src="/navLogo light.png" alt="EasyCode" className='h-6' />}
+        </Link>
         {pathname.startsWith("/problem/")? <NavRunButtonsContainer theme={theme} session={session} /> : <NavLinks theme={theme} session={session} pathname={pathname} />}
       <div className="flex items-center gap-4">
         {!session && <div className='flex gap-4 items-center'>

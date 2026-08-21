@@ -13,35 +13,31 @@ This document outlines a highly detailed, phased approach to building the full-s
 ### 1.2 Technology Stack Selection
 * **Frontend**: Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4.
 * **Backend**: Next.js API Routes (Serverless).
-* **Database**: MongoDB Atlas with Mongoose ORM.
+* **Database**: Supabase (PostgreSQL) on project `EasyCode` (`coxfhqnjsbifamgpdzqa`).
 * **AI Engine**: Google GenAI (`@google/genai`) for problem generation.
 * **UI/Components**: shadcn/ui (Radix UI), Lucide Icons, tw-animate-css, React Hook Form + Zod.
 * **Editor**: Monaco Editor (`@monaco-editor/react`) and Markdown Editor (`@uiw/react-md-editor`).
-* **Auth & Email**: NextAuth.js, Resend, React Email.
+* **Auth & Email**: NextAuth.js / Supabase Auth, Resend, React Email.
 
 ### 1.3 Environment Configuration
-* Initialized environment files (`env.text`).
+* Initialized environment files (`env.text` and `.env.local`) with Supabase project credentials.
 
 ---
 
-## Phase 2: Authentication, Database Design & Core Services Setup (🔄 IN PROGRESS)
+## Phase 2: Authentication, Database Design & Core Services Setup (✅ TABLES CREATED)
 
-### 2.1 Authentication & Email
-* Configure NextAuth.js (`next-auth`) with Credentials provider (using `bcryptjs`) and/or OAuth providers.
-* Setup email sending with Resend (`resend`) and React Email (`@react-email/components`) for welcome emails or password resets.
+### 2.1 Supabase Schema Created (Project: EasyCode)
+Applied relational database schema with indexed tables:
+* **`users` Table**: UUID primary key, `username`, `email`, `password_hash`, `avatar`, `user_type`, `bio`, `country`, `university`, `github`, `linkedin`, `skills`, `verify_code`, `is_verified`, `solved_problems_count`.
+* **`problems` Table**: UUID primary key, `title`, `slug`, `level` (Easy/Medium/Hard), `description`, `examples`, `constraints`, `test_cases` (JSONB), `code_templates` (JSONB), `topics` (TEXT[]), `companies` (TEXT[]), `likes`, `dislikes`.
+* **`submissions` Table**: UUID primary key, `user_id` (FK), `problem_id` (FK), `status`, `language`, `time`, `memory`, `source_code`, `test_case_results` (JSONB).
+* **`user_solved_problems` Join Table**: `(user_id, problem_id)` composite PK with timestamp for fast streak and aggregate calculation.
+* **`solutions` Table**: Editorial & discussion posts with `user_id`, `problem_id`, `title`, `explanation`, `source_code`, `tags`, `likes`.
+* **`similar_problems` Join Table**: `(problem_id, similar_problem_id)` composite PK.
 
-### 2.2 Database Schema Implementation
-Create robust Mongoose models with validation, indexing, and timestamps.
-* **`User` Model**: Store user details, preferences, and hashed passwords.
-* **`Problem` Model**: Store generated problems.
-  * Fields: `title`, `description`, `difficulty`, `tags`, `timeLimit`, `memoryLimit`.
-* **`TestCase` Model**: Store generated test cases linked to a `Problem`.
-  * Fields: `problemId`, `input`, `expectedOutput`, `isHidden`, `explanation`.
-* **`Submission` Model**: Track user code execution results.
-  * Fields: `userId`, `problemId`, `code`, `language`, `status` (Accepted, Wrong Answer, TLE, Error), `executionTime`, `memoryUsed`.
-
-### 2.3 Database Optimization
-* Add compound indexes for frequent queries (e.g., querying `Submissions` by `userId` and `problemId`).
+### 2.2 Performance & Optimization
+* GIN index on `problems(topics)`.
+* B-Tree indexes on `problems(level)`, `submissions(user_id)`, `submissions(problem_id)`, `submissions(status)`, and `solutions(problem_id)`.
 
 ---
 

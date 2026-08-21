@@ -49,7 +49,7 @@ export default function page() {
       setFullUserInfo(res.data.user || null)
       if (!res.data.user) return;
 
-      const data = levelWiseProblemSeperate(res.data.user.solvedQuestions as IProblem[]);
+      const data = levelWiseProblemSeperate((res.data.user.solvedQuestions || []) as IProblem[]);
 
       setLevelWiseSolvedQuestions({ easy: data.e, medium: data.m, hard: data.h });
 

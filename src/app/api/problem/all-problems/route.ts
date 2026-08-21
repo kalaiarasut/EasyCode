@@ -1,29 +1,35 @@
-import { connectToDb } from "@/lib/dbConnect";
-import problemModel from "@/models/Problem";
+import { supabase } from "@/lib/supabaseClient";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
-    await connectToDb();
-
     try {
-        const allProblems = await problemModel.find();
-        if (allProblems.length === 0) {
-            return NextResponse.json({
-                success: false,
-                message: "No problem to show, contact the admin"
-            }, { status: 400 })
-        }
+        const { data: allProblems, error } = await supabase
+            .from('problems')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Map Supabase fields (_id compatible) for frontend components
+        const formattedProblems = (allProblems || []).map((p) => ({
+            ...p,
+            _id: p.id,
+            testCases: p.test_cases || [],
+            topics: Array.isArray(p.topics) ? p.topics.join(",") : p.topics || "",
+            companies: Array.isArray(p.companies) ? p.companies.join(",") : p.companies || ""
+        }));
 
         return NextResponse.json({
             success: true,
-            message: "All the problems found successfully",
-            allProblems
-        }, { status: 200 })
-    } catch (error) {
-        console.log("Something went wrong while fetching all problems: ", error);
+            message: "All problems fetched successfully",
+            allProblems: formattedProblems
+        }, { status: 200 });
+
+    } catch (error: any) {
+        console.error("Error fetching all problems from Supabase:", error);
         return NextResponse.json({
             success: false,
-            message: "Something went wrong while fetching all problems"
+            message: error.message || "Something went wrong while fetching all problems"
         }, { status: 500 });
     }
 }
