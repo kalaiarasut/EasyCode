@@ -54,6 +54,15 @@ export default function SignUpPage() {
     return null;
   }
 
+  const onInvalid = (errors: any) => {
+    const firstError = Object.values(errors)[0] as any;
+    if (firstError?.message) {
+      toast.error(firstError.message);
+    } else {
+      toast.error("Please fill in all required fields");
+    }
+  };
+
   return (
     <AuthLayout>
       <div className="w-full">
@@ -68,7 +77,7 @@ export default function SignUpPage() {
         </div>
 
         {/* Form */}
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-4">
           {/* Username Field */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
@@ -209,7 +218,11 @@ export default function SignUpPage() {
             Already have an account?{" "}
             <Link
               href="/sign-in"
-              className="font-semibold text-neutral-900 dark:text-white hover:underline transition-all"
+              onClick={(e) => {
+                e.preventDefault();
+                router.push("/sign-in");
+              }}
+              className="font-semibold text-neutral-900 dark:text-white hover:underline transition-all cursor-pointer"
             >
               Log In
             </Link>

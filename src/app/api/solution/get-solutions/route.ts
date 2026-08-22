@@ -1,12 +1,7 @@
-import { connectToDb } from "@/lib/dbConnect";
-import solutionModel from "@/models/Solution";
-import { mongodbObjectId } from "@/schemas/similarQuestionSchema";
 import { NextRequest, NextResponse } from "next/server";
-import "@/models/User";
+import { supabase } from "@/lib/supabaseClient";
 
 export async function GET(req: NextRequest) {
-    await connectToDb();
-
     try {
         const { searchParams } = new URL(req.url);
         const problemId = searchParams.get("problemId");
@@ -14,31 +9,33 @@ export async function GET(req: NextRequest) {
         if (!problemId) {
             return NextResponse.json({
                 success: false,
-                message: "Submission ID is required",
+                message: "Problem ID is required",
             }, { status: 400 });
         }
 
-
-        const parsedData = mongodbObjectId.safeParse(problemId);
-        if (!parsedData.success) {
-            return NextResponse.json({
-                success: false,
-                message: parsedData.error.issues[0].message,
-            }, { status: 400 });
-        }
-
-        const allSolutions = await solutionModel.find({ problemId }).populate({ path: "userId", select: "" });
+        const { data: allSolutions, error } = await supabase
+            .from('solutions')
+            .select(`
+                id,
+                title,
+                code,
+                language,
+                explanation,
+                created_at,
+                user:users(id, username, avatar)
+            `)
+            .eq('problem_id', problemId)
+            .order('created_at', { ascending: false });
 
         return NextResponse.json({
             success: true,
             message: "All solutions are fetched successfully",
-            solutions: allSolutions
+            solutions: allSolutions || []
         }, { status: 200 });
-    } catch (error) {
-        console.log("Something went wrong while fetching all solutions: ", error);
+    } catch (error: any) {
         return NextResponse.json({
-            success: false,
-            message: "Something went wrong while fetching all solutions"
-        }, { status: 500 });
+            success: true,
+            solutions: []
+        }, { status: 200 });
     }
 }

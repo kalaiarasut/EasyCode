@@ -30,7 +30,7 @@ export default function AuthHero() {
       <div className="relative z-10 pt-4">
         <h2 className="text-3xl lg:text-4xl xl:text-[44px] font-medium tracking-tight text-neutral-900 dark:text-white leading-[1.15]">
           One Click Away from<br />
-          <span className="font-bold">Studio-Grade Code</span>
+          <span className="font-bold">Mastering Algorithms</span>
         </h2>
       </div>
     </div>

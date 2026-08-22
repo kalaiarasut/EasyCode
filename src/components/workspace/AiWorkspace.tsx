@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useTheme } from "next-themes";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 import {
   Search,
@@ -28,6 +28,16 @@ import {
   Lightbulb,
   BarChart3,
   MessageSquarePlus,
+  User,
+  LogOut,
+  Brain,
+  Key,
+  ShieldCheck,
+  Cpu,
+  Lock,
+  ExternalLink,
+  Code2,
+  AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
 import SettingsView from "./SettingsView";
@@ -55,18 +65,118 @@ interface Message {
   };
 }
 
+interface ModelDefinition {
+  id: string;
+  name: string;
+  provider: string;
+  category: "Frontier" | "Reasoning" | "Coding" | "Speed" | "Open Source" | "Search" | "Local";
+  badge: string;
+  contextWindow: string;
+  requiredKey: string;
+}
+
+const ALL_MODELS: ModelDefinition[] = [
+  // 1. Moonshot AI (Kimi)
+  { id: "kimi-latest", name: "Kimi Latest", provider: "Moonshot AI", category: "Reasoning", badge: "Long Context", contextWindow: "128k tokens", requiredKey: "kimi" },
+  { id: "moonshot-v1-32k", name: "Moonshot v1 32k", provider: "Moonshot AI", category: "Reasoning", badge: "Fast", contextWindow: "32k tokens", requiredKey: "kimi" },
+  { id: "moonshot-v1-128k", name: "Moonshot v1 128k", provider: "Moonshot AI", category: "Reasoning", badge: "128k Context", contextWindow: "128k tokens", requiredKey: "kimi" },
+  { id: "moonshot-v1-8k", name: "Moonshot v1 8k", provider: "Moonshot AI", category: "Speed", badge: "Fast", contextWindow: "8k tokens", requiredKey: "kimi" },
+
+  // 2. Google DeepMind
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "Google", category: "Frontier", badge: "Fast", contextWindow: "1M tokens", requiredKey: "gemini" },
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "Google", category: "Frontier", badge: "Advanced", contextWindow: "2M tokens", requiredKey: "gemini" },
+  { id: "gemini-2.0-flash-thinking", name: "Gemini 2.0 Flash Thinking", provider: "Google", category: "Reasoning", badge: "Reasoning", contextWindow: "1M tokens", requiredKey: "gemini" },
+  { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "Google", category: "Speed", badge: "Speed", contextWindow: "1M tokens", requiredKey: "gemini" },
+  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", provider: "Google", category: "Frontier", badge: "2M Context", contextWindow: "2M tokens", requiredKey: "gemini" },
+
+  // 3. OpenAI
+  { id: "o3-mini", name: "o3-mini", provider: "OpenAI", category: "Reasoning", badge: "STEM SOTA", contextWindow: "128k tokens", requiredKey: "openai" },
+  { id: "o1", name: "o1", provider: "OpenAI", category: "Reasoning", badge: "Reasoning", contextWindow: "200k tokens", requiredKey: "openai" },
+  { id: "o1-mini", name: "o1-mini", provider: "OpenAI", category: "Reasoning", badge: "Fast Math", contextWindow: "128k tokens", requiredKey: "openai" },
+  { id: "gpt-4o", name: "GPT-4o", provider: "OpenAI", category: "Frontier", badge: "Flagship", contextWindow: "128k tokens", requiredKey: "openai" },
+  { id: "gpt-4o-mini", name: "GPT-4o mini", provider: "OpenAI", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "openai" },
+
+  // 4. Anthropic
+  { id: "claude-3.7-sonnet", name: "Claude 3.7 Sonnet", provider: "Anthropic", category: "Coding", badge: "Hybrid SOTA", contextWindow: "200k tokens", requiredKey: "anthropic" },
+  { id: "claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic", category: "Coding", badge: "Top Coder", contextWindow: "200k tokens", requiredKey: "anthropic" },
+  { id: "claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "Anthropic", category: "Speed", badge: "Fast", contextWindow: "200k tokens", requiredKey: "anthropic" },
+  { id: "claude-3-opus", name: "Claude 3 Opus", provider: "Anthropic", category: "Frontier", badge: "Deep", contextWindow: "200k tokens", requiredKey: "anthropic" },
+
+  // 5. DeepSeek
+  { id: "deepseek-r1", name: "DeepSeek R1", provider: "DeepSeek", category: "Reasoning", badge: "Reasoning SOTA", contextWindow: "64k tokens", requiredKey: "deepseek" },
+  { id: "deepseek-v3", name: "DeepSeek V3", provider: "DeepSeek", category: "Coding", badge: "671B MoE", contextWindow: "64k tokens", requiredKey: "deepseek" },
+  { id: "deepseek-coder-v2", name: "DeepSeek Coder V2", provider: "DeepSeek", category: "Coding", badge: "338+ Langs", contextWindow: "128k tokens", requiredKey: "deepseek" },
+
+  // 6. Groq LPUs
+  { id: "groq-llama-3.3-70b", name: "Llama 3.3 70B (Groq)", provider: "Groq", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "groq" },
+  { id: "groq-deepseek-r1-llama-70b", name: "DeepSeek R1 70B (Groq)", provider: "Groq", category: "Reasoning", badge: "Instant CoT", contextWindow: "128k tokens", requiredKey: "groq" },
+  { id: "groq-qwen-2.5-coder-32b", name: "Qwen 2.5 Coder (Groq)", provider: "Groq", category: "Speed", badge: "Fast Coder", contextWindow: "32k tokens", requiredKey: "groq" },
+
+  // 7. Alibaba Cloud (Qwen)
+  { id: "qwen-2.5-coder-32b", name: "Qwen 2.5 Coder 32B", provider: "Alibaba Cloud", category: "Coding", badge: "Open Champion", contextWindow: "128k tokens", requiredKey: "qwen" },
+  { id: "qwq-32b-preview", name: "QwQ 32B Preview", provider: "Alibaba Cloud", category: "Reasoning", badge: "Math & CoT", contextWindow: "32k tokens", requiredKey: "qwen" },
+  { id: "qwen-2.5-72b-instruct", name: "Qwen 2.5 72B Instruct", provider: "Alibaba Cloud", category: "Frontier", badge: "72B Flagship", contextWindow: "128k tokens", requiredKey: "qwen" },
+
+  // 8. Cerebras Systems
+  { id: "cerebras-llama-3.3-70b", name: "Llama 3.3 70B (Cerebras)", provider: "Cerebras", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "cerebras" },
+  { id: "cerebras-deepseek-r1-distill-70b", name: "DeepSeek R1 70B (Cerebras)", provider: "Cerebras", category: "Reasoning", badge: "Instant CoT", contextWindow: "128k tokens", requiredKey: "cerebras" },
+
+  // 9. SambaNova Systems
+  { id: "sambanova-deepseek-r1", name: "DeepSeek R1 (SambaNova)", provider: "SambaNova", category: "Speed", badge: "Fast", contextWindow: "64k tokens", requiredKey: "sambanova" },
+  { id: "sambanova-llama-3.3-70b", name: "Llama 3.3 70B (SambaNova)", provider: "SambaNova", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "sambanova" },
+
+  // 10. Zhipu AI (GLM)
+  { id: "glm-4-plus", name: "GLM-4 Plus", provider: "Zhipu AI", category: "Reasoning", badge: "Flagship", contextWindow: "128k tokens", requiredKey: "zhipu" },
+  { id: "codegeex-4", name: "CodeGeeX-4", provider: "Zhipu AI", category: "Coding", badge: "Code SOTA", contextWindow: "128k tokens", requiredKey: "zhipu" },
+
+  // 11. 01.AI (Yi)
+  { id: "yi-lightning", name: "Yi Lightning", provider: "01.AI", category: "Frontier", badge: "Top Ranked", contextWindow: "128k tokens", requiredKey: "yi" },
+  { id: "yi-large", name: "Yi Large", provider: "01.AI", category: "Frontier", badge: "Large", contextWindow: "128k tokens", requiredKey: "yi" },
+
+  // 12. SiliconFlow
+  { id: "siliconflow-deepseek-r1", name: "DeepSeek R1 (SiliconFlow)", provider: "SiliconFlow", category: "Speed", badge: "Full 671B", contextWindow: "64k tokens", requiredKey: "siliconflow" },
+  { id: "siliconflow-qwen-2.5-coder-32b", name: "Qwen 2.5 Coder (SiliconFlow)", provider: "SiliconFlow", category: "Speed", badge: "Fast", contextWindow: "32k tokens", requiredKey: "siliconflow" },
+
+  // 13. Mistral AI
+  { id: "codestral-latest", name: "Codestral 22B", provider: "Mistral AI", category: "Coding", badge: "Code Specialist", contextWindow: "32k tokens", requiredKey: "mistral" },
+  { id: "mistral-large", name: "Mistral Large 2411", provider: "Mistral AI", category: "Frontier", badge: "123B Flagship", contextWindow: "128k tokens", requiredKey: "mistral" },
+
+  // 14. xAI (Grok)
+  { id: "grok-2", name: "Grok 2", provider: "xAI", category: "Frontier", badge: "Flagship", contextWindow: "128k tokens", requiredKey: "grok" },
+  { id: "grok-2-mini", name: "Grok 2 mini", provider: "xAI", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "grok" },
+
+  // 15. Together AI & Fireworks
+  { id: "together-llama-3.3-70b", name: "Llama 3.3 70B (Together)", provider: "Together AI", category: "Open Source", badge: "Together Cloud", contextWindow: "128k tokens", requiredKey: "together" },
+  { id: "together-deepseek-r1", name: "DeepSeek R1 (Together)", provider: "Together AI", category: "Reasoning", badge: "Deep CoT", contextWindow: "64k tokens", requiredKey: "together" },
+  { id: "fireworks-deepseek-r1", name: "DeepSeek R1 (Fireworks)", provider: "Fireworks AI", category: "Speed", badge: "Fast CoT", contextWindow: "128k tokens", requiredKey: "fireworks" },
+
+  // 16. Research & Gateways
+  { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro", provider: "Perplexity", category: "Search", badge: "Live Search", contextWindow: "128k tokens", requiredKey: "perplexity" },
+  { id: "command-r-plus", name: "Command R+", provider: "Cohere", category: "Frontier", badge: "Enterprise", contextWindow: "128k tokens", requiredKey: "cohere" },
+  { id: "openrouter-auto", name: "OpenRouter Auto", provider: "OpenRouter", category: "Frontier", badge: "300+ Routing", contextWindow: "Dynamic", requiredKey: "openrouter" },
+  { id: "ollama-local", name: "Local Ollama Host", provider: "Local", category: "Local", badge: "100% Private", contextWindow: "Configurable", requiredKey: "ollamaUrl" }
+];
+
 export default function AiWorkspace() {
   const { theme, setTheme } = useTheme();
   const { data: session } = useSession();
   const [mounted, setMounted] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
-  const [activeModel, setActiveModel] = useState("gemini-2.5-flash");
+  const [activeModel, setActiveModel] = useState("");
+  
+  // Dropdown States
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [showChatModelDropdown, setShowChatModelDropdown] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showTopicDropdown, setShowTopicDropdown] = useState(false);
+
+  // Model Search
+  const [modelDropdownSearch, setModelDropdownSearch] = useState("");
+
   const [activeMode, setActiveMode] = useState<string>("Generate Problem");
   const [difficulty, setDifficulty] = useState<"Easy" | "Medium" | "Hard">("Medium");
   const [selectedTopic, setSelectedTopic] = useState("Dynamic Programming");
-  const [showTopicDropdown, setShowTopicDropdown] = useState(false);
   const [isOnlineEnabled, setIsOnlineEnabled] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -74,8 +184,36 @@ export default function AiWorkspace() {
   const [searchFilter, setSearchFilter] = useState("");
   const [userHistory, setUserHistory] = useState<HistoryItem[]>([]);
 
+  // Stored API Keys state
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const chatModelDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Helper: Is a model available based strictly on whether user configured its key?
+  const isModelAvailable = (model: ModelDefinition): boolean => {
+    if (!model || !model.requiredKey) return false;
+    const keyVal = apiKeys[model.requiredKey];
+    return Boolean(keyVal && typeof keyVal === "string" && keyVal.trim().length > 5);
+  };
+
+  // List of ONLY available models (configured with keys)
+  const availableModelsList = useMemo(() => {
+    return ALL_MODELS.filter((m) => isModelAvailable(m));
+  }, [apiKeys]);
+
+  // Set active model to first available model if current one is not available
+  useEffect(() => {
+    if (availableModelsList.length > 0) {
+      if (!activeModel || !availableModelsList.some((m) => m.id === activeModel)) {
+        setActiveModel(availableModelsList[0].id);
+      }
+    } else {
+      setActiveModel("");
+    }
+  }, [availableModelsList, activeModel]);
 
   useEffect(() => {
     setMounted(true);
@@ -84,9 +222,40 @@ export default function AiWorkspace() {
       if (saved) {
         setUserHistory(JSON.parse(saved));
       }
+      const savedKeys = localStorage.getItem("easycode_custom_keys");
+      if (savedKeys) {
+        setApiKeys(JSON.parse(savedKeys));
+      }
+
+      // Fetch from Supabase cloud table if authenticated
+      if (session?.user) {
+        fetch("/api/user/keys")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success && data.keys && Object.keys(data.keys).length > 0) {
+              setApiKeys((prev) => ({ ...prev, ...data.keys }));
+              localStorage.setItem("easycode_custom_keys", JSON.stringify(data.keys));
+            }
+          })
+          .catch(() => {});
+      }
     } catch (e) {
-      console.warn("Could not load local history", e);
+      console.warn("Could not load local settings", e);
     }
+  }, [session]);
+
+  // Click outside to close dropdowns
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setShowProfileMenu(false);
+      }
+      if (chatModelDropdownRef.current && !chatModelDropdownRef.current.contains(event.target as Node)) {
+        setShowChatModelDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -98,10 +267,10 @@ export default function AiWorkspace() {
       id: Date.now().toString(),
       title: title.length > 50 ? title.substring(0, 48) + "..." : title,
       time: "Just now",
-      level: level || difficulty,
       topic: topic || selectedTopic,
+      level: level || difficulty,
     };
-    const updated = [newItem, ...userHistory.filter((h) => h.title !== newItem.title)].slice(0, 30);
+    const updated = [newItem, ...userHistory.slice(0, 19)];
     setUserHistory(updated);
     try {
       localStorage.setItem("easycode_chat_history", JSON.stringify(updated));
@@ -116,13 +285,29 @@ export default function AiWorkspace() {
     toast.success("History cleared");
   };
 
-  const filteredHistory = searchFilter
-    ? userHistory.filter(
-        (p) =>
-          p.title.toLowerCase().includes(searchFilter.toLowerCase()) ||
-          (p.topic && p.topic.toLowerCase().includes(searchFilter.toLowerCase()))
-      )
-    : userHistory;
+  const handleSelectModel = (model: ModelDefinition) => {
+    setActiveModel(model.id);
+    setShowModelDropdown(false);
+    setShowChatModelDropdown(false);
+    toast.success(`Active model set to ${model.name}`);
+  };
+
+  const filteredHistory = userHistory.filter((item) =>
+    item.title.toLowerCase().includes(searchFilter.toLowerCase())
+  );
+
+  const topicsList = [
+    "Dynamic Programming",
+    "Graphs & BFS/DFS",
+    "Trees & Binary Search Trees",
+    "Arrays & Hashing",
+    "Two Pointers & Sliding Window",
+    "Backtracking",
+    "Trie & Autocomplete",
+    "Greedy Algorithms",
+    "Heap / Priority Queue",
+    "Bit Manipulation",
+  ];
 
   const platformModes = [
     { label: "Generate Problem", icon: Zap },
@@ -132,87 +317,61 @@ export default function AiWorkspace() {
     { label: "System Design", icon: Layers },
   ];
 
-  const modeSuggestions: Record<string, string[]> = {
-    "Generate Problem": [
-      "Create a Hard Dynamic Programming challenge on grid path optimization with obstacle costs",
-      "Generate a Graph Shortest Path problem with dynamic obstacle weights and teleportation portals",
-      "Design a custom Trie-based autocomplete problem with real-time prefix frequency ranking",
-      "Construct an interactive Binary Search problem with real-world floating point precision edge cases",
-      "Build a Monotonic Stack problem for stock price span and next greater temperature analysis",
-      "Generate a Two-Pointer challenge for trapping rainwater variations with variable container widths"
-    ],
-    "Explain Algorithm": [
-      "Explain how Kadane's Algorithm works for Maximum Subarray Sum with O(1) space",
-      "Deep dive into Union-Find (Disjoint Set Union) with Path Compression and Union by Rank",
-      "How does Dijkstra's Algorithm differ from A* search and Bellman-Ford in shortest path graphs?",
-      "Explain Dynamic Programming memoization vs tabulation with cache locality and recursion trade-offs",
-      "How to implement Segment Trees with Lazy Propagation for range update queries"
-    ],
-    "Test Cases & Edge Cases": [
-      "Generate boundary & stress test cases for Longest Palindromic Substring",
-      "Craft comprehensive edge cases for Merge K Sorted Linked Lists (empty lists, duplicates, negative numbers)",
-      "Create adversarial test inputs for Integer to Roman and Roman to Integer conversion algorithms",
-      "Generate extreme scale test cases for checking graph bipartiteness with disconnected components"
-    ],
-    "Optimize Time & Space": [
-      "How to optimize an O(N^2) nested loop search into O(N log N) using Sorting & Two Pointers",
-      "Reduce auxiliary space from O(N) to O(1) in Fibonacci & Grid Walking Dynamic Programming",
-      "Techniques to eliminate recursive call stack overflow in deep binary tree traversals",
-      "Optimize string concatenation from O(N^2) to O(N) using mutable buffers / StringBuilder"
-    ],
-    "System Design": [
-      "Design a Distributed Rate Limiter supporting 100,000 requests/sec with Sliding Window Counter",
-      "Design an In-Memory Key-Value Cache with TTL expiration and concurrent LRU eviction policy",
-      "Architect a Real-Time Code Execution Judge System with Docker sandbox isolation and queue workers",
-      "Design a Global Leaderboard system for competitive coding contests with instant score updates"
-    ]
-  };
+  const promptSuggestions = [
+    "Create a Hard Dynamic Programming challenge on grid path optimization with obstacle costs",
+    "Generate a Graph Shortest Path problem with dynamic obstacle weights and teleportation portals",
+    "Design a custom Trie-based autocomplete problem with real-time prefix frequency ranking",
+    "Construct an interactive Binary Search problem with real-world floating point precision edge cases",
+    "Build a Monotonic Stack problem for stock price span and next greater temperature analysis",
+    "Generate a Two-Pointer challenge for trapping rainwater variations with variable container widths",
+  ];
 
-  const currentSuggestions = modeSuggestions[activeMode] || modeSuggestions["Generate Problem"];
-  const topicsList = ["Dynamic Programming", "Graph Theory", "Binary Search", "Trees & BST", "Trie", "Greedy", "Hash Table", "Two Pointers", "Sliding Window", "Heap / Priority Queue", "Stack & Queue", "Bit Manipulation"];
+  const handleSend = async (customPromptText?: string) => {
+    const textToSend = customPromptText || prompt;
+    if (!textToSend.trim() || isLoading) return;
 
-  const handleSend = async (customPrompt?: string) => {
-    const text = customPrompt || prompt;
-    if (!text.trim() || isLoading) return;
-
-    setActiveView("chat");
+    if (availableModelsList.length === 0 || !activeModel) {
+      toast.error("No API key configured. Please add an API key in Settings & API Keys first.", {
+        action: {
+          label: "Open Settings",
+          onClick: () => setActiveView("settings"),
+        },
+      });
+      return;
+    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: text.trim(),
+      content: textToSend,
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setPrompt("");
     setIsLoading(true);
 
-    saveHistoryItem(text.trim());
+    saveHistoryItem(textToSend, difficulty, selectedTopic);
 
     try {
-      let customKeys = {};
       let customInstructions = "";
       let memories = [];
       try {
-        const savedKeys = localStorage.getItem("easycode_custom_keys");
-        if (savedKeys) customKeys = JSON.parse(savedKeys);
-        const savedInst = localStorage.getItem("easycode_custom_instructions");
-        if (savedInst) customInstructions = savedInst;
-        const savedMems = localStorage.getItem("easycode_user_memories");
-        if (savedMems) memories = JSON.parse(savedMems);
+        customInstructions = localStorage.getItem("easycode_custom_instructions") || "";
+        const memSaved = localStorage.getItem("easycode_user_memories");
+        if (memSaved) memories = JSON.parse(memSaved);
       } catch (e) {}
 
       const res = await fetch("/api/ai/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: text,
+          prompt: textToSend,
           difficulty,
           topic: selectedTopic,
           focus: activeMode,
           model: activeModel,
           customInstructions,
-          customKeys,
+          customKeys: apiKeys,
           memories,
         }),
       });
@@ -220,29 +379,30 @@ export default function AiWorkspace() {
       const data = await res.json();
 
       if (data.success && data.problem) {
-        const prob = data.problem;
+        const p = data.problem;
+        const starterCode = p.starterCode?.python || p.starterCode?.cpp || p.starterCode?.javascript || "";
+        const lang = p.starterCode?.python ? "Python" : p.starterCode?.cpp ? "C++" : "JavaScript";
+
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          content: prob.description || "Here is the generated problem specification and reference solution.",
+          content: `${p.description}\n\n**Constraints:**\n${p.constraints}`,
+          codeSnippet: starterCode ? { language: lang, code: starterCode } : undefined,
           problemDetails: {
-            title: prob.title,
-            level: prob.level,
-            examples: prob.examples,
-            constraints: prob.constraints,
-            testCases: prob.testCases,
-            hints: prob.hints,
+            title: p.title,
+            level: p.level,
+            examples: p.examples,
+            constraints: p.constraints,
+            testCases: p.testCases,
+            hints: p.hints,
           },
-          codeSnippet: prob.starterCode?.python
-            ? { language: "python", code: prob.starterCode.python }
-            : undefined,
         };
         setMessages((prev) => [...prev, assistantMessage]);
       } else {
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          content: data.message || "I've processed your algorithmic request and prepared the structured challenge.",
+          content: data.message || "Could not generate response. Please check your API key in Settings.",
         };
         setMessages((prev) => [...prev, assistantMessage]);
       }
@@ -267,9 +427,25 @@ export default function AiWorkspace() {
     textareaRef.current?.focus();
   };
 
-  if (!mounted) return null;
+  const filteredDropdownModels = useMemo(() => {
+    if (!modelDropdownSearch.trim()) return availableModelsList;
+    return availableModelsList.filter(
+      (m) =>
+        m.name.toLowerCase().includes(modelDropdownSearch.toLowerCase()) ||
+        m.id.toLowerCase().includes(modelDropdownSearch.toLowerCase()) ||
+        m.provider.toLowerCase().includes(modelDropdownSearch.toLowerCase())
+    );
+  }, [availableModelsList, modelDropdownSearch]);
 
+  const activeModelObj = useMemo(() => {
+    return ALL_MODELS.find((m) => m.id === activeModel);
+  }, [activeModel]);
+
+  const currentUserId = (session?.user as any)?._id || (session?.user as any)?.id || "";
   const username = session?.user?.name || (session?.user as any)?.username || "Developer";
+  const userEmail = session?.user?.email || "";
+
+  if (!mounted) return null;
 
   return (
     <div className="min-h-screen w-full bg-[#FBF9F4] dark:bg-[#1C1B19] text-[#1C1B19] dark:text-[#E8E6E3] flex flex-col transition-colors duration-300 font-sans selection:bg-neutral-500/20">
@@ -280,13 +456,17 @@ export default function AiWorkspace() {
       </div>
 
       {/* TOP HEADER */}
-      <header className="relative z-20 w-full h-14 border-b border-[#E8E4DB] dark:border-[#2D2B28] bg-[#FBF9F4]/90 dark:bg-[#1C1B19]/90 backdrop-blur-md px-5 flex items-center justify-between">
+      <header className="h-14 border-b border-[#E8E4DB] dark:border-[#2D2B28] px-4 flex items-center justify-between relative z-40 bg-[#FBF9F4]/80 dark:bg-[#1C1B19]/80 backdrop-blur-md">
         
-        {/* Left: Brand + Model Selector */}
+        {/* Left: Branding + Global Model Pill */}
         <div className="flex items-center gap-3">
-          <Link href="/" onClick={() => setActiveView("chat")} className="flex items-center gap-2.5 group">
-            <div className="w-5 h-5 rounded-full bg-neutral-900/10 dark:bg-white/10 flex items-center justify-center">
-              <div className="w-2.5 h-2.5 rounded-full bg-neutral-800 dark:bg-neutral-200 shadow-xs" />
+          <Link
+            href="/"
+            onClick={() => setActiveView("chat")}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
+            <div className="w-5 h-5 rounded-md bg-[#1C1B19] dark:bg-[#EDEDEB] flex items-center justify-center text-[11px] font-mono font-bold text-white dark:text-[#1C1B19]">
+              E
             </div>
             <span className="font-serif text-lg tracking-tight font-medium text-[#1A1918] dark:text-[#F3F2F0]">
               EasyCode
@@ -295,39 +475,100 @@ export default function AiWorkspace() {
 
           <span className="text-[#C8C4BC] dark:text-[#4A4742] text-sm font-light">/</span>
 
-          {/* Model Switcher Pill */}
+          {/* Top Model Switcher Pill */}
           <div className="relative">
             <button
               onClick={() => setShowModelDropdown(!showModelDropdown)}
-              className="flex items-center gap-1.5 text-xs text-[#524E48] dark:text-[#A8A49D] hover:text-[#1A1918] dark:hover:text-white py-1 px-2 rounded-md hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors"
+              className={`flex items-center gap-1.5 text-xs py-1 px-2.5 rounded-md transition-colors border ${
+                availableModelsList.length > 0
+                  ? "text-[#524E48] dark:text-[#A8A49D] hover:text-[#1A1918] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] border-black/[0.04] dark:border-white/[0.04]"
+                  : "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20 font-medium"
+              }`}
             >
-              <span className="font-mono">{activeModel}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${availableModelsList.length > 0 ? "bg-emerald-500" : "bg-amber-500"}`} />
+              <span className="font-mono">{activeModel || "No API Key Added"}</span>
               <span className="text-[10px] opacity-60">⬍</span>
             </button>
 
             {showModelDropdown && (
-              <div className="absolute top-full left-0 mt-1.5 w-56 bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-xl py-1 z-50 text-xs font-mono">
-                {["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash-thinking", "claude-3.5-sonnet", "claude-3.5-haiku", "gpt-4o", "o1", "deepseek-r1", "qwen-2.5-coder"].map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => {
-                      setActiveModel(m);
-                      setShowModelDropdown(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors flex items-center justify-between ${
-                      activeModel === m ? "text-neutral-950 dark:text-white font-semibold" : "text-[#524E48] dark:text-[#A8A49D]"
-                    }`}
-                  >
-                    <span>{m}</span>
-                    {activeModel === m && <Check className="w-3 h-3" />}
-                  </button>
-                ))}
+              <div className="absolute top-full left-0 mt-1.5 w-72 max-h-96 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-2xl py-1 z-50 text-xs font-mono">
+                
+                {availableModelsList.length === 0 ? (
+                  <div className="p-4 text-center space-y-2.5 font-sans">
+                    <AlertCircle className="w-5 h-5 mx-auto text-amber-500 opacity-80" />
+                    <div className="space-y-1">
+                      <p className="font-semibold text-neutral-900 dark:text-white text-xs">
+                        No Available Models
+                      </p>
+                      <p className="text-[11px] text-neutral-500 leading-relaxed">
+                        Add an API key in Settings to unlock your models.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowModelDropdown(false);
+                        setActiveView("settings");
+                      }}
+                      className="w-full py-1.5 px-3 rounded-lg bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      Add API Key in Settings →
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="p-2 border-b border-black/[0.04] dark:border-white/[0.04]">
+                      <input
+                        type="text"
+                        value={modelDropdownSearch}
+                        onChange={(e) => setModelDropdownSearch(e.target.value)}
+                        placeholder="Filter available models..."
+                        className="w-full px-2.5 py-1 text-xs rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-neutral-200 dark:border-neutral-700 outline-hidden font-sans"
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="py-1">
+                      {filteredDropdownModels.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => handleSelectModel(m)}
+                          className={`w-full text-left px-3 py-2 transition-colors flex items-center justify-between ${
+                            activeModel === m.id
+                              ? "bg-black/[0.05] dark:bg-white/[0.08] text-neutral-950 dark:text-white font-semibold"
+                              : "text-[#524E48] dark:text-[#A8A49D] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="truncate">{m.name}</span>
+                              <span className="text-[10px] font-sans opacity-60">{m.provider} • {m.badge}</span>
+                            </div>
+                          </div>
+                          {activeModel === m.id && <Check className="w-3.5 h-3.5" />}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="pt-1 mt-1 border-t border-black/[0.04] dark:border-white/[0.04] px-2 pb-1">
+                      <button
+                        onClick={() => {
+                          setShowModelDropdown(false);
+                          setActiveView("settings");
+                        }}
+                        className="w-full text-center py-1.5 text-[11px] font-sans font-medium text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg transition-colors"
+                      >
+                        Manage API Keys in Settings →
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right: Share + Theme + Avatar Badge */}
+        {/* Right: Share + Theme + Interactive Profile Avatar */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => {
@@ -349,18 +590,88 @@ export default function AiWorkspace() {
             {theme === "dark" ? <Sun className="w-4 h-4 text-neutral-300" /> : <Moon className="w-4 h-4 text-[#5A5650]" />}
           </button>
 
-          {/* Profile Avatar Badge */}
+          {/* Interactive Profile Avatar Button & Menu */}
           {session?.user ? (
-            <Link
-              href={`/dashboard/${(session.user as any)._id || ""}`}
-              className="w-7 h-7 rounded-lg bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900 flex items-center justify-center text-xs font-semibold shadow-xs hover:opacity-90"
-            >
-              {username.charAt(0).toUpperCase()}
-            </Link>
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="w-8 h-8 rounded-lg bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] flex items-center justify-center text-xs font-semibold shadow-xs hover:opacity-90 transition-all border border-black/10 dark:border-white/20"
+                title="Account Menu"
+              >
+                {username.charAt(0).toUpperCase()}
+              </button>
+
+              {/* Profile Dropdown Modal */}
+              {showProfileMenu && (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-2xl shadow-2xl p-2 z-50 text-xs">
+                  
+                  {/* User Card */}
+                  <div className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.04] dark:border-white/[0.04] mb-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-neutral-900 dark:text-white truncate">
+                        {username}
+                      </span>
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">
+                        Verified
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 truncate">{userEmail}</p>
+                  </div>
+
+                  {/* Menu Links */}
+                  <div className="space-y-0.5">
+                    <Link
+                      href={currentUserId ? `/dashboard/${currentUserId}` : "/problems"}
+                      onClick={() => setShowProfileMenu(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-neutral-700 dark:text-neutral-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                    >
+                      <User className="w-3.5 h-3.5 text-neutral-400" />
+                      <span>My Profile & Submissions</span>
+                    </Link>
+
+                    <button
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        setActiveView("settings");
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-neutral-700 dark:text-neutral-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                    >
+                      <Key className="w-3.5 h-3.5 text-neutral-400" />
+                      <span>Settings & API Keys</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        setActiveView("settings");
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-neutral-700 dark:text-neutral-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                    >
+                      <Brain className="w-3.5 h-3.5 text-neutral-400" />
+                      <span>AI Memory Bank</span>
+                    </button>
+                  </div>
+
+                  {/* Sign Out Button */}
+                  <div className="pt-2 mt-2 border-t border-black/[0.04] dark:border-white/[0.04]">
+                    <button
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        signOut({ callbackUrl: "/" });
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <Link
               href="/sign-in"
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] hover:opacity-90"
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] hover:opacity-90 transition-opacity"
             >
               Sign In
             </Link>
@@ -373,55 +684,46 @@ export default function AiWorkspace() {
         
         {/* LEFT SIDEBAR */}
         <aside className="w-64 border-r border-[#E8E4DB] dark:border-[#2D2B28] bg-[#FBF9F4]/40 dark:bg-[#1C1B19]/40 backdrop-blur-xs flex flex-col justify-between p-3.5 shrink-0 hidden md:flex">
-          <div className="flex flex-col gap-4 overflow-hidden">
+          
+          <div className="space-y-4">
             
-            {/* New Chat Button */}
+            {/* New Challenge Button */}
             <button
               onClick={startNewChat}
-              className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors w-full font-medium mb-0.5 border ${
-                activeView === "chat" && messages.length === 0
-                  ? "bg-neutral-900/10 dark:bg-white/10 text-neutral-900 dark:text-white border-neutral-300 dark:border-neutral-700"
-                  : "bg-neutral-900/5 dark:bg-white/5 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-900/10 dark:hover:bg-white/10 border-neutral-300/40 dark:border-neutral-700/40"
-              }`}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#ECE8DF]/80 dark:bg-[#282624]/80 border border-[#DFDAD0] dark:border-[#383532] text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] hover:bg-white dark:hover:bg-[#33302C] transition-all shadow-2xs group cursor-pointer"
             >
-              <div className="flex items-center gap-2">
-                <MessageSquarePlus className="w-4 h-4 opacity-70" />
-                <span className="text-xs">New Challenge</span>
-              </div>
-              <Plus className="w-3.5 h-3.5 opacity-60" />
+              <span className="font-medium">New Challenge</span>
+              <Plus className="w-3.5 h-3.5 text-neutral-400 group-hover:text-neutral-800 dark:group-hover:text-neutral-200 transition-colors" />
             </button>
 
-            {/* Navigation Links under New Challenge */}
-            <div className="flex flex-col gap-0.5 text-xs font-medium text-[#4A4640] dark:text-[#B5B2AA]">
-              
-              {/* Search */}
-              <button
-                onClick={() => {
-                  setActiveView("chat");
-                  textareaRef.current?.focus();
-                }}
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors w-full text-left"
-              >
-                <Search className="w-3.5 h-3.5 opacity-70" />
-                <span>Search</span>
-              </button>
+            {/* Search History Filter */}
+            <div className="relative w-full">
+              <Search className="w-3 h-3 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+              <input
+                type="text"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="Search history..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#ECE8DF]/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532] text-xs text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden"
+              />
+            </div>
 
-              {/* Projects / Problem Set */}
+            {/* Quick Links */}
+            <div className="space-y-0.5 pt-1">
               <Link
                 href="/problems"
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors w-full"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-[#524E48] dark:text-[#A8A49D] hover:text-[#1C1B19] dark:hover:text-white hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors"
               >
                 <FolderKanban className="w-3.5 h-3.5 opacity-70" />
-                <span>Projects</span>
+                <span>All Problems</span>
               </Link>
 
-              {/* Settings Button (Active highlight container matching screenshot) */}
               <button
-                onClick={() => setActiveView("settings")}
-                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors w-full text-left ${
+                onClick={() => setActiveView(activeView === "settings" ? "chat" : "settings")}
+                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
                   activeView === "settings"
-                    ? "bg-[#ECE8DF] dark:bg-[#282624] text-[#1C1B19] dark:text-white font-semibold shadow-2xs"
-                    : "hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+                    ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] font-medium"
+                    : "text-[#524E48] dark:text-[#A8A49D] hover:text-[#1C1B19] dark:hover:text-white hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
                 }`}
               >
                 <SettingsIcon className="w-3.5 h-3.5 opacity-70" />
@@ -430,8 +732,8 @@ export default function AiWorkspace() {
 
               {session?.user && (
                 <Link
-                  href={`/dashboard/${(session.user as any)._id || ""}`}
-                  className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors w-full"
+                  href={currentUserId ? `/dashboard/${currentUserId}` : "/problems"}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-[#524E48] dark:text-[#A8A49D] hover:text-[#1C1B19] dark:hover:text-white hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors"
                 >
                   <BarChart3 className="w-3.5 h-3.5 opacity-70" />
                   <span>My Submissions</span>
@@ -439,46 +741,39 @@ export default function AiWorkspace() {
               )}
             </div>
 
-            {/* Generated Problem History Section */}
-            <div className="flex flex-col gap-1.5 flex-1 overflow-hidden">
-              <div className="px-2.5 text-[11px] font-semibold text-[#8C877D] dark:text-[#6E6A63] flex items-center justify-between">
+            {/* History Section */}
+            <div className="space-y-2 pt-2 border-t border-[#E8E4DB] dark:border-[#2D2B28]">
+              <div className="flex items-center justify-between text-[11px] text-[#8C877D] dark:text-[#6E6A63] font-semibold tracking-wider uppercase px-1">
                 <span>Recent History</span>
                 {userHistory.length > 0 && (
                   <button
                     onClick={clearHistory}
-                    className="text-[10px] text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
+                    className="hover:text-neutral-900 dark:hover:text-white lowercase text-[10px] opacity-70"
                     title="Clear history"
                   >
-                    Clear
+                    clear
                   </button>
                 )}
               </div>
 
               {filteredHistory.length === 0 ? (
-                <div className="py-8 px-3 text-center text-xs text-[#8C877D] dark:text-[#6E6A63] space-y-1.5">
-                  <Sparkles className="w-4 h-4 mx-auto opacity-30 text-neutral-500" />
-                  <p className="font-medium text-[#4A4640] dark:text-[#A09D96]">No history yet</p>
-                  <p className="text-[11px] opacity-70 leading-relaxed">
-                    Prompts & generated problems will appear here as you create them.
-                  </p>
+                <div className="p-3 text-center text-xs text-[#8C877D] dark:text-[#6E6A63] space-y-1">
+                  <p>No recent challenges</p>
+                  <p className="text-[10px] opacity-70">Type below to generate your first problem.</p>
                 </div>
               ) : (
-                <div className="flex flex-col gap-1 overflow-y-auto pr-1 text-xs text-[#524E48] dark:text-[#A09D96]">
+                <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                   {filteredHistory.map((item) => (
                     <button
                       key={item.id}
                       onClick={() => handleSend(item.title)}
-                      className="text-left px-2.5 py-2 rounded-lg hover:text-[#1A1918] dark:hover:text-[#F3F2F0] hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-all group"
+                      className="w-full text-left p-2 rounded-lg hover:bg-black/[0.04] dark:hover:bg-white/[0.04] text-xs transition-colors group flex flex-col gap-0.5"
                     >
-                      <div className="flex items-center justify-between gap-1 mb-0.5">
-                        {item.level && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.2 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 bg-neutral-100/50 dark:bg-neutral-800/50">
-                            {item.level}
-                          </span>
-                        )}
-                        <span className="text-[10px] text-neutral-400 opacity-60 ml-auto">{item.time}</span>
+                      <div className="flex items-center justify-between text-[10px] text-neutral-400">
+                        <span>{item.level || "Challenge"}</span>
+                        <span>{item.time}</span>
                       </div>
-                      <span className="truncate block font-medium text-xs text-[#33312E] dark:text-[#D5D2CA]">
+                      <span className="text-[#3A3733] dark:text-[#C5C2BA] truncate font-medium group-hover:text-black dark:group-hover:text-white">
                         {item.title}
                       </span>
                     </button>
@@ -583,14 +878,16 @@ export default function AiWorkspace() {
                             <div className="flex items-center justify-between pb-2 border-b border-white/[0.06] text-[11px] text-neutral-400 uppercase font-semibold">
                               <span>Starter Solution ({msg.codeSnippet.language})</span>
                               <button
-                                onClick={() => copyText(msg.codeSnippet!.code, msg.id)}
+                                onClick={() => copyText(msg.codeSnippet?.code || "", msg.id)}
                                 className="flex items-center gap-1 hover:text-white transition-colors"
                               >
-                                {copiedId === msg.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                                <span>{copiedId === msg.id ? "Copied" : "Copy Code"}</span>
+                                {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
                               </button>
                             </div>
-                            <pre className="mt-2 overflow-x-auto whitespace-pre text-neutral-300">{msg.codeSnippet.code}</pre>
+                            <pre className="mt-2 overflow-x-auto p-1 leading-relaxed text-neutral-300">
+                              {msg.codeSnippet.code}
+                            </pre>
                           </div>
                         )}
                       </div>
@@ -600,7 +897,7 @@ export default function AiWorkspace() {
                   {isLoading && (
                     <div className="flex items-center gap-2 text-xs text-[#8C877D] dark:text-[#7A766F] p-3">
                       <Sparkles className="w-4 h-4 animate-spin text-neutral-400" />
-                      <span>AI Problem Setter is generating your coding challenge...</span>
+                      <span>AI Problem Setter is generating your challenge using {activeModel}...</span>
                     </div>
                   )}
                   <div ref={messagesEndRef} />
@@ -632,6 +929,100 @@ export default function AiWorkspace() {
                   {/* Left Action Buttons */}
                   <div className="flex items-center gap-1.5 flex-wrap">
                     
+                    {/* IN-CHAT MODEL SELECTOR (Shows ONLY Available Models) */}
+                    <div className="relative" ref={chatModelDropdownRef}>
+                      <button
+                        onClick={() => setShowChatModelDropdown(!showChatModelDropdown)}
+                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                          availableModelsList.length > 0
+                            ? "border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-[#4A4640] dark:text-[#C5C2BA]"
+                            : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium"
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${availableModelsList.length > 0 ? "bg-emerald-500" : "bg-amber-500"}`} />
+                        <span className="font-mono text-[11px]">
+                          {activeModel || "No API Key Added"}
+                        </span>
+                        <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+                      </button>
+
+                      {showChatModelDropdown && (
+                        <div className="absolute bottom-full left-0 mb-1.5 w-72 max-h-80 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-2xl py-1 z-50 text-xs font-mono">
+                          
+                          {availableModelsList.length === 0 ? (
+                            <div className="p-4 text-center space-y-2.5 font-sans">
+                              <AlertCircle className="w-5 h-5 mx-auto text-amber-500 opacity-80" />
+                              <div className="space-y-1">
+                                <p className="font-semibold text-neutral-900 dark:text-white text-xs">
+                                  No Active Models
+                                </p>
+                                <p className="text-[11px] text-neutral-500 leading-relaxed">
+                                  Add an API key in Settings to activate your models.
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setShowChatModelDropdown(false);
+                                  setActiveView("settings");
+                                }}
+                                className="w-full py-1.5 px-3 rounded-lg bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90 transition-opacity"
+                              >
+                                Configure API Keys in Settings →
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="p-2 border-b border-black/[0.04] dark:border-white/[0.04]">
+                                <input
+                                  type="text"
+                                  value={modelDropdownSearch}
+                                  onChange={(e) => setModelDropdownSearch(e.target.value)}
+                                  placeholder="Search available models..."
+                                  className="w-full px-2.5 py-1 text-xs rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-neutral-200 dark:border-neutral-700 outline-hidden font-sans"
+                                  autoFocus
+                                />
+                              </div>
+
+                              <div className="py-1">
+                                {filteredDropdownModels.map((m) => (
+                                  <button
+                                    key={m.id}
+                                    onClick={() => handleSelectModel(m)}
+                                    className={`w-full text-left px-3 py-2 transition-colors flex items-center justify-between ${
+                                      activeModel === m.id
+                                        ? "bg-black/[0.05] dark:bg-white/[0.08] text-neutral-950 dark:text-white font-semibold"
+                                        : "text-[#524E48] dark:text-[#A8A49D] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                      <div className="flex flex-col">
+                                        <span className="truncate">{m.name}</span>
+                                        <span className="text-[10px] font-sans opacity-60">{m.provider} • {m.badge}</span>
+                                      </div>
+                                    </div>
+                                    {activeModel === m.id && <Check className="w-3.5 h-3.5" />}
+                                  </button>
+                                ))}
+                              </div>
+
+                              <div className="pt-1 mt-1 border-t border-black/[0.04] dark:border-white/[0.04] px-2 pb-1">
+                                <button
+                                  onClick={() => {
+                                    setShowChatModelDropdown(false);
+                                    setActiveView("settings");
+                                  }}
+                                  className="w-full text-center py-1.5 text-[11px] font-sans font-medium text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg transition-colors"
+                                >
+                                  Add More Keys in Settings →
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Topic Selector */}
                     <div className="relative">
                       <button
@@ -726,41 +1117,35 @@ export default function AiWorkspace() {
                     <button
                       key={label}
                       onClick={() => setActiveMode(label)}
-                      className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all flex items-center gap-1.5 ${
                         activeMode === label
-                          ? "border-[#C8C3B8] dark:border-[#4D4943] bg-white dark:bg-[#2B2927] text-[#1C1B19] dark:text-white shadow-2xs font-semibold"
-                          : "border-[#E5E0D4] dark:border-[#33302C] bg-[#F2EFE8]/70 dark:bg-[#242220]/70 text-[#6B665E] dark:text-[#9E9B93] hover:bg-white dark:hover:bg-[#2B2927]"
+                          ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] border-transparent font-semibold shadow-2xs"
+                          : "border-[#DFDAD0] dark:border-[#383532] bg-white/40 dark:bg-[#242321]/40 text-[#524E48] dark:text-[#A8A49D] hover:bg-white dark:hover:bg-[#2B2927]"
                       }`}
                     >
-                      <Icon className="w-3.5 h-3.5 opacity-80" />
+                      <Icon className="w-3.5 h-3.5" />
                       <span>{label}</span>
                     </button>
                   ))}
                 </div>
               )}
 
-              {/* PROMPT SUGGESTIONS CARD */}
+              {/* COMMONLY SEARCHED & RELEVANT PROMPTS */}
               {messages.length === 0 && (
-                <div className="w-full bg-[#ECE8DF]/60 dark:bg-[#262422]/60 backdrop-blur-md border border-[#DFDAD0] dark:border-[#35322E] rounded-2xl p-4 shadow-2xs space-y-2.5">
-                  
-                  {/* Header */}
-                  <div className="flex items-center justify-between text-xs font-medium text-[#4A4640] dark:text-[#C5C2BA]">
-                    <div className="flex items-center gap-2">
-                      <Lightbulb className="w-3.5 h-3.5 opacity-70" />
-                      <span>Trending {activeMode} Prompts</span>
-                    </div>
-                    <span className="text-[10px] text-neutral-400">Click to run</span>
+                <div className="w-full pt-4 border-t border-[#E8E4DB] dark:border-[#2D2B28] space-y-3">
+                  <div className="flex items-center justify-between text-xs text-[#8C877D] dark:text-[#6E6A63] font-medium">
+                    <span>Trending {activeMode} Prompts</span>
+                    <span className="text-[11px] opacity-70">Click to run</span>
                   </div>
 
-                  {/* Prompts list */}
-                  <div className="flex flex-col divide-y divide-black/[0.04] dark:divide-white/[0.04]">
-                    {currentSuggestions.map((item, idx) => (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {promptSuggestions.map((suggestion) => (
                       <button
-                        key={idx}
-                        onClick={() => handleSend(item)}
-                        className="text-left py-2.5 px-1.5 text-xs md:text-sm text-[#524E48] dark:text-[#A8A49D] hover:text-[#1A1918] dark:hover:text-[#F3F2F0] hover:bg-black/[0.02] dark:hover:bg-white/[0.03] rounded-md transition-colors leading-relaxed"
+                        key={suggestion}
+                        onClick={() => handleSend(suggestion)}
+                        className="text-left p-3 rounded-xl border border-[#DFDAD0] dark:border-[#383532] bg-white/40 dark:bg-[#242321]/40 hover:bg-white/80 dark:hover:bg-[#282624] text-xs text-[#4A4640] dark:text-[#C5C2BA] hover:text-black dark:hover:text-white transition-all shadow-2xs leading-relaxed"
                       >
-                        {item}
+                        {suggestion}
                       </button>
                     ))}
                   </div>
@@ -769,6 +1154,7 @@ export default function AiWorkspace() {
 
             </div>
           )}
+
         </main>
       </div>
 

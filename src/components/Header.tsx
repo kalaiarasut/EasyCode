@@ -32,13 +32,14 @@ export default function Header() {
     return null;
   }
 
-  // If on home or auth pages, render self-contained auth layout
+  // If on home, auth pages, or problem workspace, render dedicated layout
   if (
     pathname === "/" ||
     pathname.startsWith("/sign-in") ||
     pathname.startsWith("/sign-up") ||
     pathname.startsWith("/forget-password") ||
-    pathname.startsWith("/verify")
+    pathname.startsWith("/verify") ||
+    pathname.startsWith("/problem/")
   ) {
     return null;
   }

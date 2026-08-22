@@ -1,7 +1,6 @@
 import { z } from "zod";
 
-// Example: you might define ObjectId as a string for validation
-export const mongodbObjectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid ObjectId");
+export const mongodbObjectId = z.string().min(1, { message: "Invalid ID" });
 
 export const similarQuestionValidation = z.object({
     _id: mongodbObjectId,

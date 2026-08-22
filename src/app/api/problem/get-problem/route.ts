@@ -13,13 +13,39 @@ export async function GET(req: NextRequest) {
             }, { status: 400 });
         }
 
-        const { data: problem, error } = await supabase
-            .from('problems')
-            .select('*')
-            .eq('id', problemId)
-            .maybeSingle();
+        let query = supabase.from('problems').select('*');
+        
+        let problem = null;
+        if (problemId) {
+            const { data: byId } = await supabase
+                .from('problems')
+                .select('*')
+                .eq('id', problemId)
+                .maybeSingle();
+            
+            if (byId) {
+                problem = byId;
+            } else {
+                const { data: bySlug } = await supabase
+                    .from('problems')
+                    .select('*')
+                    .eq('slug', problemId)
+                    .maybeSingle();
+                problem = bySlug;
+            }
+        }
 
-        if (error || !problem) {
+        if (!problem) {
+            const { data: firstProblem } = await supabase
+                .from('problems')
+                .select('*')
+                .order('created_at', { ascending: true })
+                .limit(1)
+                .maybeSingle();
+            problem = firstProblem;
+        }
+
+        if (!problem) {
             return NextResponse.json({
                 success: false,
                 message: "Problem not found"
