@@ -21,7 +21,8 @@ import {
   Globe,
   HardDrive,
   Terminal,
-  Activity
+  Activity,
+  Lock
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -98,7 +99,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     baichuan: "",
     siliconflow: "",
 
-    // Ultra-Fast Hardware Inference
+    // Hardware Inference
     groq: "",
     cerebras: "",
     sambanova: "",
@@ -183,9 +184,9 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     try {
       localStorage.setItem("easycode_custom_instructions", customInstructions);
       localStorage.setItem("easycode_pref_lang", preferredLanguage);
-      toast("Settings saved successfully");
+      toast.success("Settings saved successfully");
     } catch (e) {
-      toast("Could not save settings");
+      toast.error("Could not save settings");
     }
   };
 
@@ -201,9 +202,9 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
           body: JSON.stringify({ keys: apiKeys })
         });
       }
-      toast("API keys saved securely in Supabase & local storage");
+      toast.success("API keys saved securely in Supabase & local storage");
     } catch (e) {
-      toast("API keys saved locally");
+      toast.success("API keys saved locally");
     }
   };
 
@@ -221,7 +222,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     try {
       localStorage.setItem("easycode_user_memories", JSON.stringify(updated));
     } catch (e) {}
-    toast("New memory added");
+    toast.success("New memory added");
   };
 
   const deleteMemory = (id: string) => {
@@ -230,7 +231,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     try {
       localStorage.setItem("easycode_user_memories", JSON.stringify(updated));
     } catch (e) {}
-    toast("Memory deleted");
+    toast.success("Memory deleted");
   };
 
   const clearAllMemories = () => {
@@ -238,10 +239,10 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     try {
       localStorage.removeItem("easycode_user_memories");
     } catch (e) {}
-    toast("All memories cleared");
+    toast.success("All memories cleared");
   };
 
-  // Comprehensive Exhaustive List of Supported Model Groups
+  // Comprehensive Exhaustive List of Supported Model Groups (Verified Online)
   const ALL_SUPPORTED_GROUPS: ModelGroup[] = useMemo(() => [
     // 1. Moonshot AI (Kimi)
     {
@@ -258,19 +259,19 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
           requiredKey: "kimi",
         },
         {
-          id: "moonshot-v1-32k",
-          name: "Moonshot v1 32k",
-          description: "High-speed 32k context reasoning model for competitive programming.",
-          contextWindow: "32,000 tokens",
-          badge: "Fast",
-          requiredKey: "kimi",
-        },
-        {
           id: "moonshot-v1-128k",
           name: "Moonshot v1 128k",
           description: "Extended 128k context reasoning and problem decomposition engine.",
           contextWindow: "128,000 tokens",
           badge: "128k Context",
+          requiredKey: "kimi",
+        },
+        {
+          id: "moonshot-v1-32k",
+          name: "Moonshot v1 32k",
+          description: "High-speed 32k context reasoning model for competitive programming.",
+          contextWindow: "32,000 tokens",
+          badge: "Fast",
           requiredKey: "kimi",
         },
         {
@@ -343,7 +344,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
           id: "o3-mini",
           name: "o3-mini",
           description: "High-reasoning STEM specialist optimized for competitive programming and mathematical proofs.",
-          contextWindow: "128,000 tokens",
+          contextWindow: "200,000 tokens",
           badge: "STEM SOTA",
           requiredKey: "openai",
         },
@@ -456,7 +457,6 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       ],
     },
 
-    // 6. Groq (Ultra-Fast LPUs)
     // 6. Groq
     {
       provider: "Groq",
@@ -573,7 +573,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       ],
     },
 
-    // 10. Zhipu AI (GLM-4 & CodeGeeX)
+    // 10. Zhipu AI (GLM)
     {
       provider: "Zhipu AI (GLM)",
       category: "Reasoning",
@@ -623,7 +623,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       ],
     },
 
-    // 12. SiliconFlow (SiliconCloud)
+    // 12. SiliconFlow
     {
       provider: "SiliconFlow (SiliconCloud)",
       category: "Speed",
@@ -877,6 +877,10 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
   return (
     <div className="w-full max-w-3xl mx-auto py-8 px-4 md:px-0 space-y-7">
       
+      {/* Hidden dummy input to completely absorb aggressive browser autofills */}
+      <input type="text" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" autoComplete="off" />
+      <input type="password" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" autoComplete="off" />
+
       {/* Title */}
       <div className="space-y-1">
         <div className="flex items-center justify-between">
@@ -1003,7 +1007,16 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 <div className="relative w-full">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
                   <input
-                    type="text"
+                    type="search"
+                    name="settings-models-search-field"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    data-form-type="other"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
                     value={modelSearchQuery}
                     onChange={(e) => setModelSearchQuery(e.target.value)}
                     placeholder="Search active models (e.g. 'Kimi', 'Claude', 'DeepSeek', 'Qwen', 'Gemini')..."
@@ -1172,6 +1185,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-kimi-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.kimi || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, kimi: e.target.value })}
                   placeholder="sk-..."
@@ -1192,6 +1214,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-gemini-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.gemini || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, gemini: e.target.value })}
                   placeholder="AIzaSy..."
@@ -1212,6 +1243,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-openai-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.openai || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, openai: e.target.value })}
                   placeholder="sk-proj-..."
@@ -1232,6 +1272,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-anthropic-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.anthropic || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, anthropic: e.target.value })}
                   placeholder="sk-ant-api..."
@@ -1252,6 +1301,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-deepseek-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.deepseek || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, deepseek: e.target.value })}
                   placeholder="sk-..."
@@ -1272,6 +1330,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-grok-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.grok || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, grok: e.target.value })}
                   placeholder="xai-..."
@@ -1292,6 +1359,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-mistral-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.mistral || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, mistral: e.target.value })}
                   placeholder="Mistral API key..."
@@ -1312,6 +1388,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-perplexity-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.perplexity || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, perplexity: e.target.value })}
                   placeholder="pplx-..."
@@ -1332,6 +1417,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-cohere-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.cohere || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, cohere: e.target.value })}
                   placeholder="Cohere API key..."
@@ -1362,6 +1456,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-qwen-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.qwen || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, qwen: e.target.value })}
                   placeholder="sk-..."
@@ -1382,6 +1485,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-zhipu-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.zhipu || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, zhipu: e.target.value })}
                   placeholder="API key..."
@@ -1402,6 +1514,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-yi-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.yi || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, yi: e.target.value })}
                   placeholder="API key..."
@@ -1422,6 +1543,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-siliconflow-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.siliconflow || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, siliconflow: e.target.value })}
                   placeholder="sk-..."
@@ -1452,6 +1582,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-groq-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.groq || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, groq: e.target.value })}
                   placeholder="gsk_..."
@@ -1472,6 +1611,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-cerebras-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.cerebras || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, cerebras: e.target.value })}
                   placeholder="csk-..."
@@ -1492,6 +1640,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-sambanova-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.sambanova || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, sambanova: e.target.value })}
                   placeholder="API key..."
@@ -1512,6 +1669,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-fireworks-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.fireworks || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, fireworks: e.target.value })}
                   placeholder="fw_..."
@@ -1532,6 +1698,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-together-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.together || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, together: e.target.value })}
                   placeholder="Together API key..."
@@ -1552,6 +1727,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="password"
+                  name="api-key-openrouter-custom-input"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.openrouter || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, openrouter: e.target.value })}
                   placeholder="sk-or-v1-..."
@@ -1582,6 +1766,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </div>
                 <input
                   type="text"
+                  name="api-key-ollama-host-input"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={apiKeys.ollamaUrl || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, ollamaUrl: e.target.value })}
                   placeholder="http://localhost:11434"
@@ -1597,6 +1790,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <input
                     type="text"
+                    name="api-key-custom-base-url-input"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    data-form-type="other"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
                     value={apiKeys.customBaseUrl || ""}
                     onChange={(e) => setApiKeys({ ...apiKeys, customBaseUrl: e.target.value })}
                     placeholder="Base URL (e.g. https://my-cluster.ai/v1)"
@@ -1604,6 +1806,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                   />
                   <input
                     type="password"
+                    name="api-key-custom-api-key-input"
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    data-form-type="other"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
                     value={apiKeys.customApiKey || ""}
                     onChange={(e) => setApiKeys({ ...apiKeys, customApiKey: e.target.value })}
                     placeholder="API Key (optional if local)"
@@ -1652,6 +1863,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
             <div className="flex gap-2">
               <input
                 type="text"
+                name="new-memory-text-input"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                data-form-type="other"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
                 value={newMemoryText}
                 onChange={(e) => setNewMemoryText(e.target.value)}
                 onKeyDown={(e) => {
@@ -1737,6 +1957,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </label>
                 <input
                   type="text"
+                  name="general-account-name-input"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="e.g. John Doe"
@@ -1750,6 +1979,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 </label>
                 <input
                   type="email"
+                  name="general-account-email-input"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="your email address"
@@ -1774,6 +2012,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 Give the AI any instructions or specify any preferences for the output.
               </p>
               <textarea
+                name="general-custom-instructions-input"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                data-form-type="other"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
                 value={customInstructions}
                 onChange={(e) => setCustomInstructions(e.target.value)}
                 placeholder="Example: Give only concise responses. Provide time and space complexity."

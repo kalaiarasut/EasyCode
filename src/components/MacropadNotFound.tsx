@@ -443,7 +443,7 @@ export default function MacropadNotFound() {
         {/* Interactive Magnetic Plug Group */}
         <g
           transform={`translate(${plugX}, ${plugY}) rotate(${!isPluggedIn ? -4 : 0})`}
-          className={`cursor-grab active:cursor-grabbing pointer-events-auto ${
+          className={`cursor-grab active:cursor-grabbing pointer-events-auto group ${
             isDragging ? "" : "transition-all duration-150 ease-out"
           }`}
           onPointerDown={handlePointerDown}
@@ -452,13 +452,41 @@ export default function MacropadNotFound() {
         >
           {/* Hit area for drag/click */}
           <rect
-            x="-24"
-            y="-32"
-            width="48"
-            height="44"
+            x="-30"
+            y="-34"
+            width="60"
+            height="48"
             fill="transparent"
             className="outline-none"
           />
+
+          {/* Hover Tooltip Badge */}
+          <g
+            className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none"
+            transform="translate(0, -42)"
+          >
+            <rect
+              x="-66"
+              y="-12"
+              width="132"
+              height="22"
+              rx="11"
+              fill="rgba(10, 10, 12, 0.88)"
+              stroke="rgba(255, 255, 255, 0.15)"
+              strokeWidth="0.8"
+            />
+            <text
+              x="0"
+              y="3"
+              textAnchor="middle"
+              fill="#FFFFFF"
+              fontSize="10"
+              fontWeight="500"
+              fontFamily="system-ui, -apple-system, sans-serif"
+            >
+              {isPluggedIn ? "Click or drag to unplug" : "Click or drag to plug in"}
+            </text>
+          </g>
 
           {/* Strain-Relief Neck (Cable attaches at top tip: (0, -28)) */}
           <path

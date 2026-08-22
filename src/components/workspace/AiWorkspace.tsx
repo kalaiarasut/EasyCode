@@ -176,7 +176,7 @@ export default function AiWorkspace() {
 
   const [activeMode, setActiveMode] = useState<string>("Generate Problem");
   const [difficulty, setDifficulty] = useState<"Easy" | "Medium" | "Hard">("Medium");
-  const [selectedTopic, setSelectedTopic] = useState("Dynamic Programming");
+  const [selectedTopic, setSelectedTopic] = useState("");
   const [isOnlineEnabled, setIsOnlineEnabled] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -191,6 +191,7 @@ export default function AiWorkspace() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const chatModelDropdownRef = useRef<HTMLDivElement>(null);
+  const topicDropdownRef = useRef<HTMLDivElement>(null);
 
   // Helper: Is a model available based strictly on whether user configured its key?
   const isModelAvailable = (model: ModelDefinition): boolean => {
@@ -252,6 +253,9 @@ export default function AiWorkspace() {
       }
       if (chatModelDropdownRef.current && !chatModelDropdownRef.current.contains(event.target as Node)) {
         setShowChatModelDropdown(false);
+      }
+      if (topicDropdownRef.current && !topicDropdownRef.current.contains(event.target as Node)) {
+        setShowTopicDropdown(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -450,6 +454,10 @@ export default function AiWorkspace() {
   return (
     <div className="min-h-screen w-full bg-[#FBF9F4] dark:bg-[#1C1B19] text-[#1C1B19] dark:text-[#E8E6E3] flex flex-col transition-colors duration-300 font-sans selection:bg-neutral-500/20">
       
+      {/* Hidden dummy inputs to absorb aggressive browser autofill */}
+      <input type="text" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" autoComplete="off" />
+      <input type="password" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" autoComplete="off" />
+
       {/* Subtle vertical neutral grid texture */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] bg-[linear-gradient(to_right,#000_1px,transparent_1px),linear-gradient(to_bottom,#000_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#fff_1px,transparent_1px),linear-gradient(to_bottom,#fff_1px,transparent_1px)] bg-[size:5rem_5rem]" />
@@ -518,7 +526,16 @@ export default function AiWorkspace() {
                   <>
                     <div className="p-2 border-b border-black/[0.04] dark:border-white/[0.04]">
                       <input
-                        type="text"
+                        type="search"
+                        name="top-header-model-search-filter"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-form-type="other"
+                        data-1p-ignore="true"
+                        data-lpignore="true"
+                        data-bwignore="true"
                         value={modelDropdownSearch}
                         onChange={(e) => setModelDropdownSearch(e.target.value)}
                         placeholder="Filter available models..."
@@ -700,7 +717,17 @@ export default function AiWorkspace() {
             <div className="relative w-full">
               <Search className="w-3 h-3 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
               <input
-                type="text"
+                type="search"
+                name="sidebar-history-search-no-autofill"
+                id="sidebar-history-search-input"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                data-form-type="other"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
                 placeholder="Search history..."
@@ -947,7 +974,7 @@ export default function AiWorkspace() {
                       </button>
 
                       {showChatModelDropdown && (
-                        <div className="absolute bottom-full left-0 mb-1.5 w-72 max-h-80 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-2xl py-1 z-50 text-xs font-mono">
+                        <div className={`absolute ${messages.length === 0 ? "top-full mt-2" : "bottom-full mb-2"} left-0 w-72 max-h-60 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-2xl py-1 z-50 text-xs font-mono`}>
                           
                           {availableModelsList.length === 0 ? (
                             <div className="p-4 text-center space-y-2.5 font-sans">
@@ -974,7 +1001,16 @@ export default function AiWorkspace() {
                             <>
                               <div className="p-2 border-b border-black/[0.04] dark:border-white/[0.04]">
                                 <input
-                                  type="text"
+                                  type="search"
+                                  name="in-chat-model-search-filter"
+                                  autoComplete="off"
+                                  autoCorrect="off"
+                                  autoCapitalize="off"
+                                  spellCheck={false}
+                                  data-form-type="other"
+                                  data-1p-ignore="true"
+                                  data-lpignore="true"
+                                  data-bwignore="true"
                                   value={modelDropdownSearch}
                                   onChange={(e) => setModelDropdownSearch(e.target.value)}
                                   placeholder="Search available models..."
@@ -1023,19 +1059,48 @@ export default function AiWorkspace() {
                       )}
                     </div>
 
-                    {/* Topic Selector */}
-                    <div className="relative">
+                    {/* Topic Selector (Optional) */}
+                    <div className="relative" ref={topicDropdownRef}>
                       <button
                         onClick={() => setShowTopicDropdown(!showTopicDropdown)}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-[#4A4640] dark:text-[#C5C2BA] transition-colors"
+                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                          selectedTopic
+                            ? "border-neutral-700 dark:border-neutral-300 bg-neutral-900/10 dark:bg-white/10 text-neutral-900 dark:text-white font-medium"
+                            : "border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-[#4A4640] dark:text-[#C5C2BA]"
+                        }`}
                       >
                         <Layers className="w-3 h-3 opacity-60" />
-                        <span>{selectedTopic}</span>
+                        <span>{selectedTopic || "Topic (Optional)"}</span>
+                        {selectedTopic && (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTopic("");
+                            }}
+                            className="ml-0.5 hover:text-red-500 transition-colors p-0.5 text-[10px]"
+                            title="Clear topic filter"
+                          >
+                            ✕
+                          </span>
+                        )}
                         <ChevronDown className="w-2.5 h-2.5 opacity-60" />
                       </button>
 
                       {showTopicDropdown && (
-                        <div className="absolute bottom-full left-0 mb-1.5 w-48 max-h-48 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-xl py-1 z-50 text-xs">
+                        <div className={`absolute ${messages.length === 0 ? "top-full mt-2" : "bottom-full mb-2"} left-0 w-52 max-h-56 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-xl py-1 z-50 text-xs`}>
+                          <button
+                            onClick={() => {
+                              setSelectedTopic("");
+                              setShowTopicDropdown(false);
+                            }}
+                            className={`w-full text-left px-3 py-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors flex items-center justify-between ${
+                              !selectedTopic ? "text-neutral-950 dark:text-white font-semibold bg-black/[0.03] dark:bg-white/[0.05]" : "text-[#524E48] dark:text-[#A8A49D]"
+                            }`}
+                          >
+                            <span>Any / None (Default)</span>
+                            {!selectedTopic && <Check className="w-3 h-3" />}
+                          </button>
+                          <div className="my-1 border-t border-black/[0.04] dark:border-white/[0.04]" />
                           {topicsList.map((t) => (
                             <button
                               key={t}
@@ -1043,11 +1108,12 @@ export default function AiWorkspace() {
                                 setSelectedTopic(t);
                                 setShowTopicDropdown(false);
                               }}
-                              className={`w-full text-left px-3 py-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors ${
-                                selectedTopic === t ? "text-neutral-950 dark:text-white font-semibold" : "text-[#524E48] dark:text-[#A8A49D]"
+                              className={`w-full text-left px-3 py-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors flex items-center justify-between ${
+                                selectedTopic === t ? "text-neutral-950 dark:text-white font-semibold bg-black/[0.03] dark:bg-white/[0.05]" : "text-[#524E48] dark:text-[#A8A49D]"
                               }`}
                             >
-                              {t}
+                              <span>{t}</span>
+                              {selectedTopic === t && <Check className="w-3 h-3" />}
                             </button>
                           ))}
                         </div>
@@ -1071,16 +1137,17 @@ export default function AiWorkspace() {
                       ))}
                     </div>
 
-                    {/* Online Toggle */}
+                    {/* Online Toggle (Monochromatic Design) */}
                     <button
                       onClick={() => setIsOnlineEnabled(!isOnlineEnabled)}
-                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors ${
+                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border transition-all ${
                         isOnlineEnabled
-                          ? "text-[#1C1B19] dark:text-white font-medium"
-                          : "text-[#7A756C] dark:text-[#8C8880] hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                          ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] border-transparent font-medium shadow-2xs"
+                          : "border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white"
                       }`}
+                      title={isOnlineEnabled ? "Web search enabled" : "Web search disabled"}
                     >
-                      <Globe className="w-3 h-3" />
+                      <Globe className="w-3.5 h-3.5 opacity-80" />
                       <span>Online</span>
                     </button>
                   </div>

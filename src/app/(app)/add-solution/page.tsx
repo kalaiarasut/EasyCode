@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area';
 import MDEditor from '@uiw/react-md-editor';
-import { Loader2, Send } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
+import { Loader2, Send } from 'lucide-react';
+import React, { useEffect, useState, Suspense } from 'react';
 
 import {
   Form,
@@ -26,7 +26,7 @@ import { toast } from 'sonner';
 import { Types } from 'mongoose';
 import Link from 'next/link';
 
-export default function page() {
+function AddSolutionContent() {
 
   const [mounted, setMounted] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -198,5 +198,14 @@ export default function page() {
         </Form>
       </div>
     </div>
-  )
+  );
 }
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-sm text-neutral-500">Loading editor...</div>}>
+      <AddSolutionContent />
+    </Suspense>
+  );
+}
+

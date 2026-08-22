@@ -1,5 +1,6 @@
-import AiWorkspace from "@/components/workspace/AiWorkspace";
+import TrxLandingPage from "@/components/landing/TrxLandingPage";
 
 export default function Home() {
-  return <AiWorkspace />;
+  return <TrxLandingPage />;
 }
+

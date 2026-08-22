@@ -32,9 +32,10 @@ export default function Header() {
     return null;
   }
 
-  // If on home, auth pages, or problem workspace, render dedicated layout
+  // If on home, workspace, auth pages, or problem workspace, render dedicated layout
   if (
     pathname === "/" ||
+    pathname.startsWith("/workspace") ||
     pathname.startsWith("/sign-in") ||
     pathname.startsWith("/sign-up") ||
     pathname.startsWith("/forget-password") ||

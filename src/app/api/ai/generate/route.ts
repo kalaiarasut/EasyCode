@@ -37,28 +37,57 @@ Model: ${model}
 ${customInstructions ? `Custom User Preferences: ${customInstructions}` : ''}
 ${memoryContext}
 
-Generate a complete, high-quality coding challenge matching this exact JSON format without markdown backticks:
+Generate a complete, high-quality LeetCode-style challenge matching this exact JSON format without markdown backticks:
 {
   "title": "Problem Title",
   "level": "${difficulty}",
-  "description": "Clear and detailed problem statement with context and mathematical/algorithmic objectives.",
-  "examples": "Example 1:\\nInput: ...\\nOutput: ...\\nExplanation: ...\\n\\nExample 2:\\nInput: ...\\nOutput: ...",
-  "constraints": "- 1 <= n <= 10^5\\n- -10^9 <= arr[i] <= 10^9\\n- Time Complexity limit: O(N log N)\\n- Space Complexity limit: O(N)",
-  "testCases": [
-    {"input": "sample_input_1", "output": "sample_output_1"},
-    {"input": "sample_input_2", "output": "sample_output_2"},
-    {"input": "sample_input_3", "output": "sample_output_3"}
-  ],
   "topics": ["${topic}", "Algorithms", "Optimization"],
+  "description": "Clear and detailed problem statement with context and mathematical/algorithmic objectives.",
+  "constraints": [
+    "1 <= nums.length <= 10^5",
+    "-10^9 <= nums[i] <= 10^9"
+  ],
+  "examples": [
+    {
+      "id": 1,
+      "input": "nums = [2, 7, 11, 15], target = 9",
+      "output": "[0, 1]",
+      "explanation": "Because nums[0] + nums[1] == 9, we return [0, 1]."
+    }
+  ],
+  "testCases": {
+    "visible": [
+      { "input": "nums = [2, 7, 11, 15], target = 9", "output": "[0, 1]" }
+    ],
+    "hidden": [
+      { "input": "nums = [1, 2, 3], target = 5", "output": "[1, 2]" }
+    ]
+  },
+  "edgeCases": [
+    {
+      "category": "Minimal input / Empty",
+      "scenario": "Array has single element",
+      "expectedBehavior": "Returns early or handles bounds in O(1)"
+    }
+  ],
   "starterCode": {
     "python": "class Solution:\\n    def solve(self, nums: list[int]) -> int:\\n        # Your solution here\\n        pass",
-    "cpp": "class Solution {\\npublic:\\n    int solve(vector<int>& nums) {\\n        // Your solution here\\n    }\\n};",
-    "javascript": "/**\\n * @param {number[]} nums\\n * @return {number}\\n */\\nvar solve = function(nums) {\\n    // Your solution here\\n};"
+    "cpp": "class Solution {\\npublic:\\n    int solve(vector<int>& nums) {\\n        // Your solution here\\n        return 0;\\n    }\\n};",
+    "javascript": "/**\\n * @param {number[]} nums\\n * @return {number}\\n */\\nvar solve = function(nums) {\\n    // Your solution here\\n};",
+    "typescript": "function solve(nums: number[]): number {\\n    // Your solution here\\n    return 0;\\n};"
   },
   "hints": [
     "First examine the boundary conditions and brute-force approach.",
     "Can you utilize an optimal data structure (e.g. Hash Map, Heap, or Binary Search) to optimize time complexity?"
-  ]
+  ],
+  "followUp": {
+    "prompt": "Can you solve this in O(1) extra memory?"
+  },
+  "expectedComplexity": {
+    "time": "O(N)",
+    "space": "O(1)",
+    "explanation": "Single pass scan with constant extra space."
+  }
 }`;
 
         let generatedProblem = null;
