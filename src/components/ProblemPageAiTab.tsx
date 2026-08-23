@@ -32,12 +32,15 @@ import {
   ArrowDownToLine,
   CheckCheck,
   Terminal,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
 import { ApiResponse } from "@/types/ApiResponse";
 import Link from "next/link";
 import { ProviderLogo } from "@/components/common/ProviderLogos";
+import { computeLineDiff, DiffResult } from "@/utils/diffHelper";
 
 interface ProblemPageAiTabProps {
   sourceCode: string;
@@ -167,6 +170,24 @@ export default function ProblemPageAiTab({
   const [inputValue, setInputValue] = useState<string>("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [appliedCodeId, setAppliedCodeId] = useState<string | null>(null);
+
+  // Agent Mode State & Pending Diff Review
+  const [isAgentMode, setIsAgentMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("easycode_agent_mode");
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch (e) {
+      return true;
+    }
+  });
+  const [pendingDiff, setPendingDiff] = useState<{
+    id: string;
+    code: string;
+    language: string;
+    diff: DiffResult;
+    originalCode: string;
+  } | null>(null);
+  const [showDiffView, setShowDiffView] = useState<boolean>(false);
 
   // Claude thinking state animation
   const [currentVerb, setCurrentVerb] = useState<string>("Thinking");
@@ -484,16 +505,56 @@ export default function ProblemPageAiTab({
                     return [...newChats];
                   });
                 } else if (event.type === "done") {
+                  const finalOutput = event.output || accumulatedText;
                   setChats((prev) => {
                     const newChats = [...prev];
                     const target = newChats.find((c) => c.id === messageId);
                     if (target) {
-                      target.output = event.output || accumulatedText;
+                      target.output = finalOutput;
                       target.modelUsed = event.modelUsed || currentModelMeta.name;
                       target.isStreaming = false;
                     }
                     return [...newChats];
                   });
+
+                  // Detect code snippet from AI response
+                  const codeBlockMatch = finalOutput.match(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/);
+                  if (codeBlockMatch) {
+                    const extractedLang = codeBlockMatch[1] || "code";
+                    const extractedCode = codeBlockMatch[2].trim();
+                    const diff = computeLineDiff(sourceCode || "", extractedCode);
+
+                    if (diff.hasChanges) {
+                      if (isAgentMode) {
+                        // Directly apply to editor
+                        if (onApplyCode) {
+                          onApplyCode(extractedCode);
+                          setAppliedCodeId(messageId);
+                          toast.success(`⚡ Agent Mode: Applied changes (+${diff.additions} -${diff.deletions} lines) directly to editor!`);
+                          window.dispatchEvent(new CustomEvent("easycode-agent-diff-applied", {
+                            detail: {
+                              addedLineIndices: diff.addedLineIndices,
+                              additions: diff.additions,
+                              deletions: diff.deletions,
+                              oldCode: sourceCode || "",
+                              newCode: extractedCode,
+                              diff: diff,
+                            },
+                          }));
+                        }
+                      } else {
+                        // Propose diff review for user Accept/Reject
+                        setPendingDiff({
+                          id: messageId,
+                          code: extractedCode,
+                          language: extractedLang,
+                          diff,
+                          originalCode: sourceCode || "",
+                        });
+                        toast.info(`Review Mode: Proposed changes (+${diff.additions} -${diff.deletions} lines). Review above input.`);
+                      }
+                    }
+                  }
                 }
               } catch (e) {}
             }
@@ -1065,6 +1126,105 @@ export default function ProblemPageAiTab({
         </div>
       )}
 
+      {/* Pending Code Diff Review Banner (When not in Agent Mode or proposed changes pending) */}
+      {pendingDiff && (
+        <div className="mx-3 mb-2 rounded-xl border border-amber-500/30 bg-[#FDFBF7] dark:bg-[#1E1D1B] p-2.5 shadow-md animate-in slide-in-from-bottom-2 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+            <div className="flex items-center gap-2 font-mono">
+              <span className="font-semibold text-neutral-900 dark:text-white flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                Proposed Code Changes:
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold text-[11px] border border-emerald-500/25">
+                +{pendingDiff.diff.additions}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-600 dark:text-red-400 font-bold text-[11px] border border-red-500/25">
+                -{pendingDiff.diff.deletions}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {/* Toggle Diff View */}
+              <button
+                type="button"
+                onClick={() => setShowDiffView(!showDiffView)}
+                className="px-2 py-1 rounded-lg text-[11px] font-medium border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-neutral-700 dark:text-neutral-300 hover:bg-white dark:hover:bg-white/[0.08] flex items-center gap-1 transition-colors cursor-pointer"
+                title="Toggle visual line diff"
+              >
+                {showDiffView ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                <span>{showDiffView ? "Hide Diff" : "View Diff"}</span>
+              </button>
+
+              {/* Accept & Apply Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onApplyCode) {
+                    onApplyCode(pendingDiff.code);
+                    toast.success(`Accepted & applied code changes (+${pendingDiff.diff.additions} -${pendingDiff.diff.deletions} lines) to editor!`);
+                    window.dispatchEvent(new CustomEvent("easycode-agent-diff-applied", {
+                      detail: {
+                        addedLineIndices: pendingDiff.diff.addedLineIndices,
+                        additions: pendingDiff.diff.additions,
+                        deletions: pendingDiff.diff.deletions,
+                        oldCode: pendingDiff.originalCode,
+                        newCode: pendingDiff.code,
+                        diff: pendingDiff.diff,
+                      }
+                    }));
+                    setPendingDiff(null);
+                    setShowDiffView(false);
+                  }
+                }}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[#1C1B19] text-white hover:bg-black dark:bg-white dark:text-[#1C1B19] dark:hover:bg-neutral-100 flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                title="Accept and apply code to Monaco Editor"
+              >
+                <Check className="w-3 h-3 text-emerald-400 dark:text-emerald-600" />
+                <span>Accept</span>
+              </button>
+
+              {/* Reject Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingDiff(null);
+                  setShowDiffView(false);
+                  toast.info("Proposed changes rejected");
+                }}
+                className="px-2 py-1 rounded-lg text-[11px] font-medium hover:bg-black/5 dark:hover:bg-white/5 text-neutral-500 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer flex items-center gap-1"
+                title="Reject and discard changes"
+              >
+                <X className="w-3 h-3" />
+                <span>Reject</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Visual Green / Red Line-by-Line Diff Preview */}
+          {showDiffView && (
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-black/[0.08] dark:border-white/[0.08] bg-[#141414] text-xs font-mono p-2 space-y-0.5 select-text">
+              {pendingDiff.diff.lines.map((dl, idx) => (
+                <div
+                  key={idx}
+                  className={`px-1.5 py-0.5 rounded leading-tight flex items-start gap-2 ${
+                    dl.type === "add"
+                      ? "bg-emerald-500/20 text-emerald-300 border-l-2 border-emerald-500 font-medium"
+                      : dl.type === "delete"
+                      ? "bg-red-500/20 text-red-300 border-l-2 border-red-500 line-through opacity-80"
+                      : "text-neutral-400"
+                  }`}
+                >
+                  <span className="w-4 shrink-0 text-right opacity-50 select-none">
+                    {dl.type === "add" ? "+" : dl.type === "delete" ? "-" : " "}
+                  </span>
+                  <span className="whitespace-pre overflow-x-auto">{dl.line || " "}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Input Dock Area (Matching Image 1 with document chips & + button) */}
       <div className="p-3 border-t border-black/[0.06] dark:border-white/[0.06] bg-black/[0.01] dark:bg-white/[0.01]">
         <div className="relative rounded-2xl border border-neutral-300 dark:border-neutral-700/80 bg-white dark:bg-[#151515] focus-within:border-neutral-500 dark:focus-within:border-neutral-500 transition-colors p-2.5 shadow-2xs space-y-2">
@@ -1111,7 +1271,7 @@ export default function ProblemPageAiTab({
 
           {/* Bottom Controls: Plus (+) Button on Left, Send/Stop on Right */}
           <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -1119,6 +1279,28 @@ export default function ProblemPageAiTab({
                 title="Attach documents, code files, or data"
               >
                 <Plus className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Agent Mode Toggle Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isAgentMode;
+                  setIsAgentMode(next);
+                  try {
+                    localStorage.setItem("easycode_agent_mode", JSON.stringify(next));
+                  } catch (e) {}
+                }}
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition-all cursor-pointer shadow-2xs ${
+                  isAgentMode
+                    ? "bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] border-transparent font-medium"
+                    : "border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#524E48] dark:text-[#A8A49D] hover:bg-white dark:hover:bg-white/[0.08]"
+                }`}
+                title={isAgentMode ? "Agent Mode: Automatically edits the Monaco Editor with diff highlight" : "Review Mode: Proposes diff with Accept/Reject options"}
+              >
+                <Zap className={`w-3.5 h-3.5 ${isAgentMode ? "fill-amber-400 text-amber-400" : "text-[#7A756C] dark:text-[#8C8880]"}`} />
+                <span>{isAgentMode ? "Agent Mode" : "Review Mode"}</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${isAgentMode ? "bg-emerald-400 animate-pulse" : "bg-neutral-400"}`} />
               </button>
             </div>
 

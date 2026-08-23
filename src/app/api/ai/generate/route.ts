@@ -127,22 +127,31 @@ Generate a complete, high-quality LeetCode-style challenge matching this exact J
         // 2. Google Gemini Provider Family
         else if (model.startsWith("gemini")) {
             const apiKey = customKeys.gemini || process.env.GEMINI_API_KEY;
-            if (apiKey && !apiKey.startsWith("your_") && apiKey.length > 10) {
+            if (apiKey && !apiKey.startsWith("your_") && apiKey.length > 5) {
                 try {
                     const ai = new GoogleGenAI({ apiKey });
-                    let targetModel = "gemini-2.5-flash";
-                    if (model.includes("2.5-pro")) targetModel = "gemini-2.5-pro";
-                    else if (model.includes("thinking")) targetModel = "gemini-2.0-flash-thinking-exp";
-                    else if (model.includes("1.5-pro")) targetModel = "gemini-1.5-pro";
-                    else if (model.includes("1.5-flash")) targetModel = "gemini-1.5-flash";
+                    let candidates = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+                    if (model.includes("2.5-pro")) candidates = ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-2.0-flash"];
+                    else if (model.includes("thinking")) candidates = ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-thinking-exp", "gemini-2.0-flash"];
+                    else if (model.includes("1.5-pro")) candidates = ["gemini-1.5-pro", "gemini-2.0-flash"];
+                    else if (model.includes("1.5-flash")) candidates = ["gemini-1.5-flash", "gemini-2.0-flash"];
 
-                    const response = await ai.models.generateContent({
-                        model: targetModel,
-                        contents: systemPrompt
-                    });
-                    const text = response.text || "";
-                    const cleanJson = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                    generatedProblem = JSON.parse(cleanJson);
+                    for (const targetModel of candidates) {
+                        try {
+                            const response = await ai.models.generateContent({
+                                model: targetModel,
+                                contents: systemPrompt
+                            });
+                            const text = response.text || "";
+                            const cleanJson = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                            if (cleanJson) {
+                                generatedProblem = JSON.parse(cleanJson);
+                                break;
+                            }
+                        } catch (e) {
+                            console.warn(`Gemini candidate ${targetModel} failed in unary generate, trying next...`);
+                        }
+                    }
                 } catch (err) {
                     console.warn("Gemini execution error:", err);
                 }

@@ -107,6 +107,7 @@ interface ProblemHeaderProps {
   onSubmitCode: () => void;
   onOpenAi: () => void;
   onOpenNote?: () => void;
+  onOpenDebugger?: () => void;
   currentLayout?: WorkspaceLayoutType;
   onSelectLayout?: (layout: WorkspaceLayoutType) => void;
 }
@@ -120,6 +121,7 @@ export default function ProblemHeader({
   onSubmitCode,
   onOpenAi,
   onOpenNote,
+  onOpenDebugger,
   currentLayout = 'default',
   onSelectLayout,
 }: ProblemHeaderProps) {
@@ -245,6 +247,7 @@ export default function ProblemHeader({
           <Tooltip>
             <TooltipTrigger asChild>
               <button
+                onClick={onOpenDebugger}
                 className="w-full h-full flex items-center justify-center text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
                 title="Debug"
               >

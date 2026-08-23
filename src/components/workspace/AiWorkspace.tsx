@@ -639,7 +639,6 @@ export default function AiWorkspace() {
     setActiveModel(model.id);
     setShowModelDropdown(false);
     setShowChatModelDropdown(false);
-    toast.success(`Active model set to ${model.name}`);
   };
 
   const filteredHistory = userHistory.filter((item) =>
@@ -1393,53 +1392,12 @@ export default function AiWorkspace() {
                         )}
 
                         {msg.role === "assistant" && !msg.generatedProblem && (
-                          <div className="mt-3 pt-2 border-t border-black/[0.05] dark:border-white/[0.05] flex items-center justify-end gap-2 flex-wrap text-xs text-neutral-500 dark:text-neutral-400">
-                            {/* PPT / Slide Deck Generator */}
-                            {(msg.content.includes("# ") || msg.content.includes("---") || prompt.includes("@slides")) && (
-                              <button
-                                onClick={() => exportAsHtmlPresentation("EasyCode_Deck", msg.content)}
-                                className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 transition-colors cursor-pointer text-[11px] font-medium"
-                                title="Export presentation slides (PPT / HTML)"
-                              >
-                                <Presentation className="w-3 h-3 text-amber-500" />
-                                <span>Export Slides (PPT)</span>
-                              </button>
-                            )}
-
-                            {/* Printable PDF Whitepaper */}
-                            <button
-                              onClick={() => exportAsPrintableDocument("EasyCode_Technical_Specification", msg.content)}
-                              className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-[11px] font-medium"
-                              title="Export printable PDF Technical Specification"
-                            >
-                              <FileText className="w-3 h-3 text-[#524E48] dark:text-[#A8A49D]" />
-                              <span>Export PDF</span>
-                            </button>
-
-                            {/* Microsoft Word Document */}
-                            <button
-                              onClick={() => exportAsWordDocument("EasyCode_Technical_Design", msg.content)}
-                              className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-[11px] font-medium"
-                              title="Export Microsoft Word Document (.doc)"
-                            >
-                              <BookOpen className="w-3 h-3 text-[#524E48] dark:text-[#A8A49D]" />
-                              <span>Export Word (.doc)</span>
-                            </button>
-
-                            {/* Markdown Export */}
-                            <button
-                              onClick={() => downloadFile(`response_${msg.id}.md`, msg.content, "text/markdown;charset=utf-8")}
-                              className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-[11px]"
-                              title="Export message as markdown file"
-                            >
-                              <Download className="w-3 h-3" />
-                              <span>Save as .md</span>
-                            </button>
-
+                          <div className="mt-2.5 pt-1.5 border-t border-black/[0.04] dark:border-white/[0.04] flex items-center justify-end gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                             {/* Copy Text */}
                             <button
                               onClick={() => copyText(msg.content, msg.id)}
                               className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-[11px]"
+                              title="Copy response"
                             >
                               {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                               <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
@@ -1760,11 +1718,13 @@ export default function AiWorkspace() {
                             type="button"
                             onClick={() => {
                               setShowPlusMenu(false);
-                              setIsImageMode((prev) => {
-                                const next = !prev;
-                                toast.success(next ? "Image Generation Mode enabled: Describe any diagram, UI mockup, or artwork." : "Image Generation Mode disabled");
-                                return next;
-                              });
+                              const next = !isImageMode;
+                              setIsImageMode(next);
+                              if (next) {
+                                toast.success("Image Generation Mode enabled: Describe any diagram, UI mockup, or artwork.");
+                              } else {
+                                toast.info("Image Generation Mode disabled");
+                              }
                               textareaRef.current?.focus();
                             }}
                             className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
@@ -1784,11 +1744,13 @@ export default function AiWorkspace() {
                             type="button"
                             onClick={() => {
                               setShowPlusMenu(false);
-                              setIsOnlineEnabled((prev) => {
-                                const next = !prev;
-                                toast.success(next ? "Web search enabled: Real-time info" : "Web search disabled");
-                                return next;
-                              });
+                              const next = !isOnlineEnabled;
+                              setIsOnlineEnabled(next);
+                              if (next) {
+                                toast.success("Web search enabled: Real-time info");
+                              } else {
+                                toast.info("Web search disabled");
+                              }
                             }}
                             className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
                           >

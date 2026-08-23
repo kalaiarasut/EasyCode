@@ -216,32 +216,47 @@ export async function POST(req: NextRequest) {
             }
 
             const ai = new GoogleGenAI({ apiKey });
-            let targetModel = "gemini-2.5-flash";
-            if (model.includes("2.5-pro")) targetModel = "gemini-2.5-pro";
-            else if (model.includes("thinking")) targetModel = "gemini-2.0-flash-thinking-exp";
-            else if (model.includes("1.5-pro")) targetModel = "gemini-1.5-pro";
-            else if (model.includes("1.5-flash")) targetModel = "gemini-1.5-flash";
+            let candidates = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+            if (model.includes("2.5-pro")) candidates = ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-2.0-flash"];
+            else if (model.includes("thinking")) candidates = ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-thinking-exp", "gemini-2.0-flash"];
+            else if (model.includes("1.5-pro")) candidates = ["gemini-1.5-pro", "gemini-2.0-flash"];
+            else if (model.includes("1.5-flash")) candidates = ["gemini-1.5-flash", "gemini-2.0-flash"];
 
             sendEvent({ type: "chunk", section: "title", content: "Synthesizing challenge architecture..." });
 
-            try {
-              const streamResult = await ai.models.generateContentStream({
-                model: targetModel,
-                contents: systemPrompt
-              });
+            let lastGeminiErr: any = null;
+            for (const targetModel of candidates) {
+              try {
+                const streamResult = await ai.models.generateContentStream({
+                  model: targetModel,
+                  contents: systemPrompt
+                });
 
-              for await (const chunk of streamResult) {
-                const chunkText = chunk.text || "";
-                rawResponseText += chunkText;
-                sendEvent({ type: "chunk", content: chunkText });
+                for await (const chunk of streamResult) {
+                  const chunkText = chunk.text || "";
+                  rawResponseText += chunkText;
+                  sendEvent({ type: "chunk", content: chunkText });
+                }
+
+                if (rawResponseText.trim()) break;
+              } catch (streamErr: any) {
+                lastGeminiErr = streamErr;
+                console.warn(`Gemini ${targetModel} stream failed, trying unary or next candidate...`);
+                try {
+                  const unaryResult = await ai.models.generateContent({
+                    model: targetModel,
+                    contents: systemPrompt
+                  });
+                  rawResponseText = unaryResult.text || "";
+                  if (rawResponseText.trim()) break;
+                } catch (unaryErr) {
+                  lastGeminiErr = unaryErr;
+                }
               }
-            } catch (streamErr) {
-              // Fallback to unary generateContent if streaming has an edge error
-              const unaryResult = await ai.models.generateContent({
-                model: targetModel,
-                contents: systemPrompt
-              });
-              rawResponseText = unaryResult.text || "";
+            }
+
+            if (!rawResponseText.trim()) {
+              throw lastGeminiErr || new Error("Failed to generate content from Gemini models.");
             }
           }
 

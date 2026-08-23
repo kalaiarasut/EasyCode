@@ -27,6 +27,7 @@ import ProblemPageSoluction from '@/components/ProblemPageSoluction';
 import ProblemPageSubmission from '@/components/ProblemPageSubmission';
 import ProblemPageTestResult from '@/components/ProblemPageTestResult';
 import ProblemPageAiTab from '@/components/ProblemPageAiTab';
+import ProblemPageRightPanel from '@/components/ProblemPageRightPanel';
 import { WorkspaceLayoutType } from '@/components/ProblemPageLayoutsModal';
 import confetti from "canvas-confetti";
 import { GeneratedProblem } from '@/types/generatedProblem';
@@ -94,18 +95,21 @@ export default function ProblemPage() {
 
   const handleSelectLayout = (layout: WorkspaceLayoutType) => {
     setCurrentLayout(layout);
-    if (layout === 'leet') {
-      setPanelSizes({ left: 35, right: 65 });
-    } else if (layout === 'note-taking') {
-      setIsNoteOpen(true);
-      setActiveEditorTab('note');
-      setPanelSizes({ left: 40, right: 60 });
-    } else if (layout === 'debug') {
-      setConsoleTab('testresult');
-      setPanelSizes({ left: 40, right: 60 });
+    // Prevent duplication: in 3-column layouts or focus mode, tabs belong in the right column
+    if (layout === 'leet' || layout === 'note-taking' || layout === 'debug') {
+      setIsNoteOpen(false);
+      setActiveEditorTab('code');
+      setIsAskAiOpen(false);
+      if (currentTab === 'askAi') {
+        setCurrentTab('description');
+      }
     } else if (layout === 'focus') {
+      setIsNoteOpen(false);
+      setActiveEditorTab('code');
+      setIsAskAiOpen(false);
       setPanelSizes({ left: 15, right: 85 });
     } else {
+      // Default 2-column layout
       setPanelSizes({ left: 50, right: 50 });
     }
     setLayoutKey((prev) => prev + 1);
@@ -381,154 +385,282 @@ export default function ProblemPage() {
         isSubmitLoading={isSubmitLoading}
         onRunCode={handleCodeRun}
         onSubmitCode={handleCodeSubmission}
-        onOpenAi={handleOpenAskAi}
-        onOpenNote={() => {
-          setIsNoteOpen(true);
-          setActiveEditorTab('note');
+        onOpenAi={() => {
+          if (currentLayout === 'default') {
+            handleOpenAskAi();
+          } else {
+            handleSelectLayout('leet');
+          }
         }}
+        onOpenNote={() => {
+          if (currentLayout === 'default') {
+            setIsNoteOpen((prev) => !prev);
+            setActiveEditorTab((prev) => (prev === 'note' ? 'code' : 'note'));
+          } else {
+            handleSelectLayout('note-taking');
+          }
+        }}
+        onOpenDebugger={() => handleSelectLayout('debug')}
         currentLayout={currentLayout}
         onSelectLayout={handleSelectLayout}
       />
 
       {/* Main Workspace with Horizontal & Vertical Resizable Panels */}
       <div className="flex-1 w-full px-2.5 pb-2.5 pt-0 overflow-hidden">
-        <ResizablePanelGroup key={layoutKey} direction="horizontal" className="w-full h-full">
-          {/* Left Panel: Description & Community Tabs */}
-          <ResizablePanel
-            defaultSize={panelSizes.left}
-            minSize={20}
-            className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] flex flex-col shadow-sm"
-          >
-            {/* Left Top Tabs */}
-            <ProblemPageNavigation
-              currentTab={currentTab}
-              setCurrentTab={setCurrentTab}
-              isAskAiOpen={isAskAiOpen}
-              onCloseAskAi={handleCloseAskAi}
-            />
-
-            {/* Left Scrollable Content Body */}
-            <div className="flex-1 overflow-y-auto min-h-0 bg-white dark:bg-[#1a1a1a]">
-              {!problemInfo && !liveGeneratedProblem && (
-                <div className="p-6 space-y-4">
-                  <Skeleton className="h-7 w-48 rounded-md" />
-                  <div className="flex gap-2">
-                    <Skeleton className="h-6 w-16 rounded-full" />
-                    <Skeleton className="h-6 w-20 rounded-full" />
-                    <Skeleton className="h-6 w-24 rounded-full" />
+        {currentLayout === 'leet' || currentLayout === 'note-taking' || currentLayout === 'debug' ? (
+          /* 3-Column Layout (Matching Leet, Note-taking, and Debug reference modes) */
+          <ResizablePanelGroup key={layoutKey} direction="horizontal" className="w-full h-full">
+            {/* Column 1: Left Panel (Description & Community Tabs) */}
+            <ResizablePanel
+              defaultSize={28}
+              minSize={18}
+              className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] flex flex-col shadow-sm"
+            >
+              <ProblemPageNavigation
+                currentTab={currentTab}
+                setCurrentTab={setCurrentTab}
+                isAskAiOpen={isAskAiOpen}
+                onCloseAskAi={handleCloseAskAi}
+              />
+              <div className="flex-1 overflow-y-auto min-h-0 bg-white dark:bg-[#1a1a1a]">
+                {!problemInfo && !liveGeneratedProblem && (
+                  <div className="p-6 space-y-4">
+                    <Skeleton className="h-7 w-48 rounded-md" />
+                    <div className="flex gap-2">
+                      <Skeleton className="h-6 w-16 rounded-full" />
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                      <Skeleton className="h-6 w-24 rounded-full" />
+                    </div>
+                    <Skeleton className="h-32 w-full rounded-md mt-6" />
+                    <Skeleton className="h-28 w-full rounded-md mt-4" />
                   </div>
-                  <Skeleton className="h-32 w-full rounded-md mt-6" />
-                  <Skeleton className="h-28 w-full rounded-md mt-4" />
-                </div>
-              )}
+                )}
+                {liveGeneratedProblem && currentTab === "description" && (
+                  <GammaProblemCanvas
+                    problem={liveGeneratedProblem}
+                    isGenerating={isLiveGenerating}
+                    onSolveInEditor={handleApplyGeneratedProblem}
+                  />
+                )}
+                {!liveGeneratedProblem && problemInfo && currentTab === "description" && (
+                  <ProblemPageDescription problemInfo={problemInfo} session={session} />
+                )}
+                {problemInfo && currentTab === "editorial" && (
+                  <div className="p-6 text-xs text-neutral-700 dark:text-neutral-300 space-y-4">
+                    <h2 className="text-base font-bold text-neutral-900 dark:text-white">Editorial Approach</h2>
+                    <p className="leading-relaxed">
+                      To solve this problem with optimal time and space complexity, consider a two-pointer or hash-map lookup approach to reduce search time from \(O(N^2)\) to \(O(N)\).
+                    </p>
+                  </div>
+                )}
+                {problemInfo && currentTab === "solutions" && (
+                  <ProblemPageSoluction problemId={problemId} />
+                )}
+                {problemInfo && currentTab === "submissions" && (
+                  <ProblemPageSubmission
+                    theme={theme}
+                    problemInfo={problemInfo}
+                    setCurrentTab={setCurrentTab}
+                    setSubmissionOutput={setSubmissionOutput}
+                  />
+                )}
+              </div>
+              <ProblemSideFooter />
+            </ResizablePanel>
 
-              {/* Gamma Live Progressive Animation when generating from Dashboard Chat */}
-              {liveGeneratedProblem && currentTab === "description" && (
-                <GammaProblemCanvas
-                  problem={liveGeneratedProblem}
-                  isGenerating={isLiveGenerating}
-                  onSolveInEditor={handleApplyGeneratedProblem}
-                />
-              )}
+            <ResizableHandle />
 
-              {/* Standard Description (100% Original styling & UI/UX) */}
-              {!liveGeneratedProblem && problemInfo && currentTab === "description" && (
-                <ProblemPageDescription problemInfo={problemInfo} session={session} />
-              )}
+            {/* Column 2: Middle Panel (Code Editor + Testcase/Test Result Console) */}
+            <ResizablePanel defaultSize={42} minSize={25} className="overflow-hidden">
+              <ResizablePanelGroup direction="vertical" className="w-full h-full">
+                {/* Top: Code Editor */}
+                <ResizablePanel
+                  defaultSize={60}
+                  minSize={25}
+                  className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-sm"
+                >
+                  <ProblemPageCodeEditor
+                    theme={theme}
+                    selectedLanguage={selectedLanguage}
+                    setSelectedLanguage={setSelectedLanguage}
+                    setSelectedLanguageCode={setSelectedLanguageCode}
+                    sourceCode={sourceCode}
+                    setSourceCode={setSourceCode}
+                    problemId={problemId}
+                    isNoteOpen={isNoteOpen}
+                    activeEditorTab={activeEditorTab}
+                    setActiveEditorTab={setActiveEditorTab}
+                    onCloseNote={() => {
+                      setIsNoteOpen(false);
+                      setActiveEditorTab('code');
+                    }}
+                  />
+                </ResizablePanel>
 
-              {problemInfo && currentTab === "editorial" && (
-                <div className="p-6 text-xs text-neutral-700 dark:text-neutral-300 space-y-4">
-                  <h2 className="text-base font-bold text-neutral-900 dark:text-white">Editorial Approach</h2>
-                  <p className="leading-relaxed">
-                    To solve this problem with optimal time and space complexity, consider a two-pointer or hash-map lookup approach to reduce search time from \(O(N^2)\) to \(O(N)\).
-                  </p>
-                </div>
-              )}
+                <ResizableHandle />
 
-              {problemInfo && currentTab === "solutions" && (
-                <ProblemPageSoluction problemId={problemId} />
-              )}
+                {/* Bottom: Testcase & Test Result Console */}
+                <ResizablePanel
+                  defaultSize={40}
+                  minSize={20}
+                  className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-sm"
+                >
+                  <ProblemPageTestResult
+                    codeOutput={codeOutput}
+                    isCodeRunning={isCodeRunning}
+                    theme={theme}
+                    problemInfo={problemInfo}
+                    session={session}
+                    submissionOutput={submissionOutput}
+                    setSubmissionOutput={setSubmissionOutput}
+                    activeConsoleTab={consoleTab}
+                    setActiveConsoleTab={setConsoleTab}
+                  />
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            </ResizablePanel>
 
-              {/* Ask AI dynamic tab content */}
-              {(isAskAiOpen || currentTab === "askAi") && currentTab === "askAi" && (
-                <ProblemPageAiTab
-                  sourceCode={sourceCode}
-                  theme={theme}
-                  problemInfo={problemInfo}
-                  onSwitchTab={setCurrentTab}
-                  onApplyCode={(code) => {
-                    setSourceCode(code);
-                    toast.success("Applied code to Monaco Editor!");
-                  }}
-                />
-              )}
+            <ResizableHandle />
 
-              {problemInfo && currentTab === "submissions" && (
-                <ProblemPageSubmission
-                  theme={theme}
-                  problemInfo={problemInfo}
-                  setCurrentTab={setCurrentTab}
-                  setSubmissionOutput={setSubmissionOutput}
-                />
-              )}
-            </div>
+            {/* Column 3: Right Panel (✨ Leet AI Chat / 📄 Notes / 🪲 Debugger) */}
+            <ResizablePanel defaultSize={30} minSize={20} className="overflow-hidden">
+              <ProblemPageRightPanel
+                layout={currentLayout}
+                problemId={problemId}
+                problemInfo={problemInfo}
+                sourceCode={sourceCode}
+                setSourceCode={setSourceCode}
+                theme={theme}
+                onClose={() => handleSelectLayout('default')}
+              />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          /* 2-Column Layout (Default & Focus Modes) */
+          <ResizablePanelGroup key={layoutKey} direction="horizontal" className="w-full h-full">
+            {/* Left Panel: Description & Community Tabs */}
+            <ResizablePanel
+              defaultSize={panelSizes.left}
+              minSize={15}
+              className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] flex flex-col shadow-sm"
+            >
+              <ProblemPageNavigation
+                currentTab={currentTab}
+                setCurrentTab={setCurrentTab}
+                isAskAiOpen={isAskAiOpen}
+                onCloseAskAi={handleCloseAskAi}
+              />
+              <div className="flex-1 overflow-y-auto min-h-0 bg-white dark:bg-[#1a1a1a]">
+                {!problemInfo && !liveGeneratedProblem && (
+                  <div className="p-6 space-y-4">
+                    <Skeleton className="h-7 w-48 rounded-md" />
+                    <div className="flex gap-2">
+                      <Skeleton className="h-6 w-16 rounded-full" />
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                      <Skeleton className="h-6 w-24 rounded-full" />
+                    </div>
+                    <Skeleton className="h-32 w-full rounded-md mt-6" />
+                    <Skeleton className="h-28 w-full rounded-md mt-4" />
+                  </div>
+                )}
+                {liveGeneratedProblem && currentTab === "description" && (
+                  <GammaProblemCanvas
+                    problem={liveGeneratedProblem}
+                    isGenerating={isLiveGenerating}
+                    onSolveInEditor={handleApplyGeneratedProblem}
+                  />
+                )}
+                {!liveGeneratedProblem && problemInfo && currentTab === "description" && (
+                  <ProblemPageDescription problemInfo={problemInfo} session={session} />
+                )}
+                {problemInfo && currentTab === "editorial" && (
+                  <div className="p-6 text-xs text-neutral-700 dark:text-neutral-300 space-y-4">
+                    <h2 className="text-base font-bold text-neutral-900 dark:text-white">Editorial Approach</h2>
+                    <p className="leading-relaxed">
+                      To solve this problem with optimal time and space complexity, consider a two-pointer or hash-map lookup approach to reduce search time from \(O(N^2)\) to \(O(N)\).
+                    </p>
+                  </div>
+                )}
+                {problemInfo && currentTab === "solutions" && (
+                  <ProblemPageSoluction problemId={problemId} />
+                )}
+                {(isAskAiOpen || currentTab === "askAi") && currentTab === "askAi" && (
+                  <ProblemPageAiTab
+                    sourceCode={sourceCode}
+                    theme={theme}
+                    problemInfo={problemInfo}
+                    onSwitchTab={setCurrentTab}
+                    onApplyCode={(code) => {
+                      setSourceCode(code);
+                      toast.success("Applied code to Monaco Editor!");
+                    }}
+                  />
+                )}
+                {problemInfo && currentTab === "submissions" && (
+                  <ProblemPageSubmission
+                    theme={theme}
+                    problemInfo={problemInfo}
+                    setCurrentTab={setCurrentTab}
+                    setSubmissionOutput={setSubmissionOutput}
+                  />
+                )}
+              </div>
+              <ProblemSideFooter />
+            </ResizablePanel>
 
-            {/* Bottom Docked Action Footer */}
-            <ProblemSideFooter />
-          </ResizablePanel>
+            <ResizableHandle />
 
-          <ResizableHandle />
+            {/* Right Panel: Split Vertically (Top: Editor, Bottom: Testcase/Test Result Console) */}
+            <ResizablePanel defaultSize={panelSizes.right} minSize={25} className="overflow-hidden">
+              <ResizablePanelGroup direction="vertical" className="w-full h-full">
+                {/* Top: Code Editor */}
+                <ResizablePanel
+                  defaultSize={60}
+                  minSize={25}
+                  className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-sm"
+                >
+                  <ProblemPageCodeEditor
+                    theme={theme}
+                    selectedLanguage={selectedLanguage}
+                    setSelectedLanguage={setSelectedLanguage}
+                    setSelectedLanguageCode={setSelectedLanguageCode}
+                    sourceCode={sourceCode}
+                    setSourceCode={setSourceCode}
+                    problemId={problemId}
+                    isNoteOpen={isNoteOpen}
+                    activeEditorTab={activeEditorTab}
+                    setActiveEditorTab={setActiveEditorTab}
+                    onCloseNote={() => {
+                      setIsNoteOpen(false);
+                      setActiveEditorTab('code');
+                    }}
+                  />
+                </ResizablePanel>
 
-          {/* Right Panel: Split Vertically (Top: Editor, Bottom: Testcase/Test Result Console) */}
-          <ResizablePanel defaultSize={panelSizes.right} minSize={20} className="overflow-hidden">
-            <ResizablePanelGroup direction="vertical" className="w-full h-full">
-              {/* Top: Code Editor */}
-              <ResizablePanel
-                defaultSize={60}
-                minSize={25}
-                className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-sm"
-              >
-                <ProblemPageCodeEditor
-                  theme={theme}
-                  selectedLanguage={selectedLanguage}
-                  setSelectedLanguage={setSelectedLanguage}
-                  setSelectedLanguageCode={setSelectedLanguageCode}
-                  sourceCode={sourceCode}
-                  setSourceCode={setSourceCode}
-                  problemId={problemId}
-                  isNoteOpen={isNoteOpen}
-                  activeEditorTab={activeEditorTab}
-                  setActiveEditorTab={setActiveEditorTab}
-                  onCloseNote={() => {
-                    setIsNoteOpen(false);
-                    setActiveEditorTab('code');
-                  }}
-                />
-              </ResizablePanel>
+                <ResizableHandle />
 
-              <ResizableHandle />
-
-              {/* Bottom: Testcase & Test Result Console */}
-              <ResizablePanel
-                defaultSize={40}
-                minSize={20}
-                className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-sm"
-              >
-                <ProblemPageTestResult
-                  codeOutput={codeOutput}
-                  isCodeRunning={isCodeRunning}
-                  theme={theme}
-                  problemInfo={problemInfo}
-                  session={session}
-                  submissionOutput={submissionOutput}
-                  setSubmissionOutput={setSubmissionOutput}
-                  activeConsoleTab={consoleTab}
-                  setActiveConsoleTab={setConsoleTab}
-                />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+                {/* Bottom: Testcase & Test Result Console */}
+                <ResizablePanel
+                  defaultSize={40}
+                  minSize={20}
+                  className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-sm"
+                >
+                  <ProblemPageTestResult
+                    codeOutput={codeOutput}
+                    isCodeRunning={isCodeRunning}
+                    theme={theme}
+                    problemInfo={problemInfo}
+                    session={session}
+                    submissionOutput={submissionOutput}
+                    setSubmissionOutput={setSubmissionOutput}
+                    activeConsoleTab={consoleTab}
+                    setActiveConsoleTab={setConsoleTab}
+                  />
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        )}
       </div>
     </div>
   );

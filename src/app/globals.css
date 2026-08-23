@@ -249,3 +249,24 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Monaco Editor Agent Diff Highlights (Green additions, Red deletions like Antigravity / Cursor) */
+.monaco-diff-line-added {
+  background-color: rgba(34, 197, 94, 0.14) !important;
+  border-left: 3px solid #22c55e !important;
+}
+
+.monaco-diff-gutter-added {
+  background-color: #22c55e !important;
+  width: 4px !important;
+}
+
+.monaco-diff-line-deleted {
+  background-color: rgba(239, 68, 68, 0.14) !important;
+  border-left: 3px solid #ef4444 !important;
+}
+
+.monaco-diff-gutter-deleted {
+  background-color: #ef4444 !important;
+  width: 4px !important;
+}

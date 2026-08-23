@@ -262,6 +262,61 @@ export default function ProblemPageCodeEditor({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [cursorPos, setCursorPos] = useState({ line: 1, column: 1 });
   const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
+  const decorationsRef = useRef<string[]>([]);
+
+  // Agent Diff Highlights State (Like Antigravity / Cursor / Copilot)
+  const [activeDiffMeta, setActiveDiffMeta] = useState<{
+    additions: number;
+    deletions: number;
+    oldCode: string;
+  } | null>(null);
+
+  // Listen to Agent code apply event to render green added lines & red highlights
+  useEffect(() => {
+    const handleDiffApplied = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      setActiveDiffMeta({
+        additions: detail.additions || 0,
+        deletions: detail.deletions || 0,
+        oldCode: detail.oldCode || "",
+      });
+
+      if (editorRef.current && monacoRef.current && Array.isArray(detail.addedLineIndices) && detail.addedLineIndices.length > 0) {
+        const monaco = monacoRef.current;
+        const newDecorations = detail.addedLineIndices.map((lineNum: number) => ({
+          range: new monaco.Range(lineNum, 1, lineNum, 1),
+          options: {
+            isWholeLine: true,
+            className: 'monaco-diff-line-added',
+            linesDecorationsClassName: 'monaco-diff-gutter-added',
+          },
+        }));
+        decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, newDecorations);
+      }
+    };
+
+    window.addEventListener("easycode-agent-diff-applied" as any, handleDiffApplied);
+    return () => {
+      window.removeEventListener("easycode-agent-diff-applied" as any, handleDiffApplied);
+    };
+  }, []);
+
+  const handleDismissDiff = () => {
+    if (editorRef.current) {
+      decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, []);
+    }
+    setActiveDiffMeta(null);
+  };
+
+  const handleRevertDiff = () => {
+    if (activeDiffMeta?.oldCode) {
+      setSourceCode(activeDiffMeta.oldCode);
+      toast.info("Reverted to previous code");
+    }
+    handleDismissDiff();
+  };
 
   // Note Tab State
   const [noteContent, setNoteContent] = useState<string>("");
@@ -342,6 +397,7 @@ export default function ProblemPageCodeEditor({
 
   const handleEditorMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
+    monacoRef.current = monaco;
 
     // Define exact LeetCode syntax themes
     monaco.editor.defineTheme('leetcode-light', {
@@ -723,6 +779,36 @@ export default function ProblemPageCodeEditor({
               ))}
             </div>
           </div>
+
+          {/* Floating Agent Diff Status Bar (Like Antigravity / Cursor / Copilot) */}
+          {activeDiffMeta && (
+            <div className="bg-[#1C1B19] dark:bg-[#252321] text-white px-3 py-1.5 flex items-center justify-between text-xs border-b border-white/[0.08] shadow-sm animate-in slide-in-from-top-2">
+              <div className="flex items-center gap-2 font-mono text-[11px]">
+                <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Agent Changes Applied:
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">+{activeDiffMeta.additions}</span>
+                <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-bold">-{activeDiffMeta.deletions}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDismissDiff}
+                  className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1 text-white"
+                >
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span>Keep Changes</span>
+                </button>
+                <button
+                  onClick={handleRevertDiff}
+                  className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1 text-neutral-300 hover:text-white"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Revert</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Monaco Code Editor */}
           <div className="flex-1 w-full relative min-h-0">
