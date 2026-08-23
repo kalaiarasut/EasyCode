@@ -9,7 +9,7 @@ import {
 import ProblemHeader from '@/components/ProblemHeader';
 import ProblemPageNavigation from '@/components/ProblemPageNavigation';
 import ProblemSideFooter from '@/components/ProblemPageSideFooter';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 
 import { mongodbObjectId } from '@/schemas/similarQuestionSchema';
 import { toast } from 'sonner';
@@ -22,19 +22,23 @@ import ProblemPageCodeEditor from '@/components/ProblemPageCodeEditor';
 import { useTheme } from 'next-themes';
 import { useSession } from 'next-auth/react';
 import { codeRunValidation } from '@/schemas/codeRunSchema';
+import { codeSubmissionValidation } from '@/schemas/codeSubmissionSchema';
 import ProblemPageSoluction from '@/components/ProblemPageSoluction';
 import ProblemPageSubmission from '@/components/ProblemPageSubmission';
 import ProblemPageTestResult from '@/components/ProblemPageTestResult';
-import { codeSubmissionValidation } from '@/schemas/codeSubmissionSchema';
 import ProblemPageAiTab from '@/components/ProblemPageAiTab';
 import confetti from "canvas-confetti";
+import { GeneratedProblem } from '@/types/generatedProblem';
+import GammaProblemCanvas from '@/components/problem-builder/GammaProblemCanvas';
 
 export default function ProblemPage() {
   const [mounted, setMounted] = useState<boolean>(false);
   const pathname = useParams();
+  const searchParams = useSearchParams();
   const problemId = pathname?.problemId as string;
   const { theme } = useTheme();
   const { data: session } = useSession();
+
   const fallbackProblem: any = {
     _id: "c0000000-0000-0000-0000-000000000001",
     title: "Two Sum",
@@ -73,9 +77,16 @@ export default function ProblemPage() {
   const [isCodeRunning, setIsCodeRunning] = useState<boolean>(false);
   const [isSubmitLoading, setIsSubmitLoading] = useState<boolean>(false);
   const [currentTab, setCurrentTab] = useState<string>("description");
-  const [consoleTab, setConsoleTab] = useState<'testcase' | 'testresult'>('testresult');
+  const [consoleTab, setConsoleTab] = useState<'testcase' | 'testresult'>('testcase');
   const [codeOutput, setCodeOutput] = useState<Judge0SubmissionResult[] | null>(null);
   const [submissionOutput, setSubmissionOutput] = useState<codeSubmissionResultType | null>(null);
+
+  // Ask AI Dynamic Tab State
+  const [isAskAiOpen, setIsAskAiOpen] = useState<boolean>(false);
+
+  // Live Problem Generator State (triggered from Dashboard Chat)
+  const [isLiveGenerating, setIsLiveGenerating] = useState<boolean>(false);
+  const [liveGeneratedProblem, setLiveGeneratedProblem] = useState<GeneratedProblem | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -97,10 +108,74 @@ export default function ProblemPage() {
     fetchAllProblems();
   }, []);
 
-  // Fetch problem details
+  // Check for Live Problem Generation request from Dashboard Chat
+  useEffect(() => {
+    if (!mounted) return;
+
+    const isGenerateParam = searchParams?.get("generate") === "true";
+    const paramPrompt = searchParams?.get("prompt");
+    const paramDiff = (searchParams?.get("difficulty") || "Medium") as "Easy" | "Medium" | "Hard";
+    const paramTopic = searchParams?.get("topic") || "Algorithms";
+
+    let storedPrompt = "";
+    try {
+      storedPrompt = sessionStorage.getItem("easycode_live_generate_prompt") || "";
+    } catch (e) {}
+
+    const activePrompt = paramPrompt || storedPrompt;
+
+    if (isGenerateParam && activePrompt) {
+      // Clear stored prompt so it doesn't trigger repeatedly on reload
+      try {
+        sessionStorage.removeItem("easycode_live_generate_prompt");
+      } catch (e) {}
+
+      const triggerGeneration = async () => {
+        setIsLiveGenerating(true);
+        setCurrentTab("description");
+
+        try {
+          let apiKeys: Record<string, string> = {};
+          try {
+            const saved = localStorage.getItem("easycode_custom_keys");
+            if (saved) apiKeys = JSON.parse(saved);
+          } catch (e) {}
+
+          const res = await fetch("/api/ai/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: activePrompt,
+              difficulty: paramDiff,
+              topic: paramTopic,
+              focus: "Generate Problem",
+              model: "gemini-2.5-flash",
+              customKeys: apiKeys,
+            }),
+          });
+
+          const data = await res.json();
+          if (data.success && data.problem) {
+            setLiveGeneratedProblem(data.problem);
+          } else {
+            toast.error(data.message || "Failed to generate problem specification");
+          }
+        } catch (error) {
+          console.error("Live generation error:", error);
+          toast.error("Error connecting to AI generation service");
+        } finally {
+          setIsLiveGenerating(false);
+        }
+      };
+
+      triggerGeneration();
+    }
+  }, [mounted, searchParams]);
+
+  // Fetch problem details for static problems
   useEffect(() => {
     const fetchProblemDetails = async () => {
-      if (!mounted || !problemId) return;
+      if (!mounted || !problemId || searchParams?.get("generate") === "true") return;
 
       try {
         const parsedData = mongodbObjectId.safeParse(problemId);
@@ -122,38 +197,46 @@ export default function ProblemPage() {
     };
 
     fetchProblemDetails();
-  }, [mounted, problemId]);
+  }, [problemId, mounted, searchParams]);
 
+  // Confetti effect for successful submission
+  const showConfetti = () => {
+    confetti({
+      particleCount: 80,
+      spread: 70,
+      origin: { y: 0.6 },
+    });
+  };
+
+  // Run Code against Judge0
   const handleCodeRun = async () => {
-    if (!problemInfo || !session) {
-      if (!session) toast.error("Please sign in to run code");
+    if (!sourceCode.trim()) {
+      toast.error("Please write some code first!");
+      return;
+    }
+
+    const testcases = problemInfo?.testCases || fallbackProblem.testCases;
+
+    const data = {
+      source_code: sourceCode,
+      language_id: selectedLanguageCode,
+      testCases: testcases,
+    };
+
+    const parsedData = codeRunValidation.safeParse(data);
+    if (!parsedData.success) {
+      toast.error(parsedData.error.issues[0].message);
       return;
     }
 
     setIsCodeRunning(true);
-    setConsoleTab("testresult");
-    setCodeOutput(null);
-    setSubmissionOutput(null);
-
+    setConsoleTab('testresult');
     try {
-      const data = {
-        sourceCode: sourceCode,
-        languageId: selectedLanguageCode,
-        testCases: problemInfo.testCases,
-      };
-
-      const parsedData = codeRunValidation.safeParse(data);
-      if (!parsedData.success) {
-        toast.error(parsedData.error.issues[0].message);
-        return;
-      }
-
       const res = await axios.post<ApiResponse>("/api/code/run-code", data);
-      toast.success("Code executed successfully");
       setCodeOutput(res.data.results ?? null);
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {
-        toast.error(error.response.data.message || "Please check your code and try again.");
+        toast.error(error.response.data.message || "Execution failed");
       } else {
         toast.error("Error while running code");
       }
@@ -162,40 +245,29 @@ export default function ProblemPage() {
     }
   };
 
-  const showConfetti = () => {
-    confetti({
-      particleCount: 150,
-      spread: 80,
-      origin: { y: 0.6 },
-    });
-  };
-
+  // Submit Code
   const handleCodeSubmission = async () => {
-    if (!problemInfo || !session) {
-      if (!session) toast.error("Please sign in to submit code");
+    if (!sourceCode.trim()) {
+      toast.error("Please write some code before submitting!");
+      return;
+    }
+
+    const data = {
+      source_code: sourceCode,
+      language_id: selectedLanguageCode,
+      problemId: problemInfo?._id || problemId,
+    };
+
+    const parsedData = codeSubmissionValidation.safeParse(data);
+    if (!parsedData.success) {
+      toast.error(parsedData.error.issues[0].message);
       return;
     }
 
     setIsSubmitLoading(true);
-    setConsoleTab("testresult");
+    setConsoleTab('testresult');
     try {
-      const data = {
-        userId: session?.user._id,
-        language: selectedLanguage,
-        problemId: problemInfo._id,
-        sourceCode,
-        languageId: selectedLanguageCode,
-        testCases: problemInfo.testCases,
-      };
-
-      const parsedData = codeSubmissionValidation.safeParse(data);
-      if (!parsedData.success) {
-        toast.error(parsedData.error.issues[0].message);
-        return;
-      }
-
       const res = await axios.post<ApiResponse>("/api/code/submit-code", data);
-      toast.success("Code submitted successfully");
       if (res.data.submissionOutput?.status === "Accepted") {
         showConfetti();
       }
@@ -211,12 +283,69 @@ export default function ProblemPage() {
     }
   };
 
+  // Apply Generated Problem from Gamma Builder into the active Problem Page
+  const handleApplyGeneratedProblem = (generated: GeneratedProblem) => {
+    const adaptedProblem: any = {
+      _id: "gen-" + Date.now(),
+      title: generated.title,
+      level: generated.level || generated.difficulty || "Medium",
+      description: generated.description,
+      examples: generated.examples,
+      constraints: generated.constraints,
+      testCases: generated.testCases?.visible || generated.testCases || [],
+      topics: generated.topics,
+      companies: generated.companies || ["Google", "Meta", "Amazon"],
+      hints: generated.hints,
+      followUp: generated.followUp,
+      expectedComplexity: generated.expectedComplexity,
+      edgeCases: generated.edgeCases,
+    };
+
+    setProblemInfo(adaptedProblem);
+
+    // Synchronize starter code stub to editor
+    if (generated.starterCode) {
+      const lowerLang = selectedLanguage.toLowerCase();
+      const codeKey = lowerLang.includes("python")
+        ? "python"
+        : lowerLang.includes("c++") || lowerLang.includes("cpp")
+        ? "cpp"
+        : lowerLang.includes("java") && !lowerLang.includes("script")
+        ? "java"
+        : lowerLang.includes("type")
+        ? "typescript"
+        : "javascript";
+
+      const matchedCode = (generated.starterCode as any)[codeKey] || generated.starterCode.python || generated.starterCode.cpp || "";
+      if (matchedCode) {
+        setSourceCode(matchedCode);
+      }
+    }
+
+    setLiveGeneratedProblem(null);
+    setCurrentTab("description");
+    toast.success(`"${generated.title}" loaded into editor!`);
+  };
+
+  // Navbar "Ask AI" button handler: opens the dynamic Ask AI tab next to Solutions
+  const handleOpenAskAi = () => {
+    setIsAskAiOpen(true);
+    setCurrentTab("askAi");
+  };
+
+  const handleCloseAskAi = () => {
+    setIsAskAiOpen(false);
+    if (currentTab === "askAi") {
+      setCurrentTab("description");
+    }
+  };
+
   if (!mounted) {
     return null;
   }
 
   return (
-    <div className="w-full h-screen flex flex-col bg-neutral-100 dark:bg-[#121212] overflow-hidden">
+    <div className="w-full h-screen flex flex-col bg-[#f0f0f0] dark:bg-[#1a1a1a] overflow-hidden">
       {/* Top Navbar */}
       <ProblemHeader
         problemId={problemId}
@@ -225,11 +354,11 @@ export default function ProblemPage() {
         isSubmitLoading={isSubmitLoading}
         onRunCode={handleCodeRun}
         onSubmitCode={handleCodeSubmission}
-        onOpenAi={() => setCurrentTab("chatBot")}
+        onOpenAi={handleOpenAskAi}
       />
 
       {/* Main Workspace with Horizontal & Vertical Resizable Panels */}
-      <div className="flex-1 w-full p-2 overflow-hidden">
+      <div className="flex-1 w-full px-2.5 pb-2.5 pt-0 overflow-hidden">
         <ResizablePanelGroup direction="horizontal" className="w-full h-full">
           {/* Left Panel: Description & Community Tabs */}
           <ResizablePanel
@@ -238,11 +367,16 @@ export default function ProblemPage() {
             className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] flex flex-col shadow-sm"
           >
             {/* Left Top Tabs */}
-            <ProblemPageNavigation currentTab={currentTab} setCurrentTab={setCurrentTab} />
+            <ProblemPageNavigation
+              currentTab={currentTab}
+              setCurrentTab={setCurrentTab}
+              isAskAiOpen={isAskAiOpen}
+              onCloseAskAi={handleCloseAskAi}
+            />
 
             {/* Left Scrollable Content Body */}
             <div className="flex-1 overflow-y-auto min-h-0 bg-white dark:bg-[#1a1a1a]">
-              {!problemInfo && (
+              {!problemInfo && !liveGeneratedProblem && (
                 <div className="p-6 space-y-4">
                   <Skeleton className="h-7 w-48 rounded-md" />
                   <div className="flex gap-2">
@@ -255,7 +389,17 @@ export default function ProblemPage() {
                 </div>
               )}
 
-              {problemInfo && currentTab === "description" && (
+              {/* Gamma Live Progressive Animation when generating from Dashboard Chat */}
+              {liveGeneratedProblem && currentTab === "description" && (
+                <GammaProblemCanvas
+                  problem={liveGeneratedProblem}
+                  isGenerating={isLiveGenerating}
+                  onSolveInEditor={handleApplyGeneratedProblem}
+                />
+              )}
+
+              {/* Standard Description (100% Original styling & UI/UX) */}
+              {!liveGeneratedProblem && problemInfo && currentTab === "description" && (
                 <ProblemPageDescription problemInfo={problemInfo} session={session} />
               )}
 
@@ -263,13 +407,23 @@ export default function ProblemPage() {
                 <div className="p-6 text-xs text-neutral-700 dark:text-neutral-300 space-y-4">
                   <h2 className="text-base font-bold text-neutral-900 dark:text-white">Editorial Approach</h2>
                   <p className="leading-relaxed">
-                    To solve this problem with optimal time and space complexity, consider a two-pointer or hash-map lookup approach to reduce the search time from \(O(N^2)\) to \(O(N)\).
+                    To solve this problem with optimal time and space complexity, consider a two-pointer or hash-map lookup approach to reduce search time from \(O(N^2)\) to \(O(N)\).
                   </p>
                 </div>
               )}
 
               {problemInfo && currentTab === "solutions" && (
                 <ProblemPageSoluction problemId={problemId} />
+              )}
+
+              {/* Ask AI dynamic tab content */}
+              {(isAskAiOpen || currentTab === "askAi") && currentTab === "askAi" && (
+                <ProblemPageAiTab
+                  sourceCode={sourceCode}
+                  theme={theme}
+                  problemInfo={problemInfo}
+                  onSwitchTab={setCurrentTab}
+                />
               )}
 
               {problemInfo && currentTab === "submissions" && (
@@ -279,10 +433,6 @@ export default function ProblemPage() {
                   setCurrentTab={setCurrentTab}
                   setSubmissionOutput={setSubmissionOutput}
                 />
-              )}
-
-              {problemInfo && currentTab === "chatBot" && (
-                <ProblemPageAiTab sourceCode={sourceCode} theme={theme} />
               )}
             </div>
 

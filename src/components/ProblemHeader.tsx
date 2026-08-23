@@ -75,6 +75,12 @@ const IconSparkleGradient = () => (
   </svg>
 );
 
+const IconBug = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" className="w-3.5 h-3.5">
+    <path fillRule="evenodd" d="M12 4a2 2 0 00-2 2h4a2 2 0 00-2-2zm3.924 2.384A.997.997 0 0016 6a4 4 0 00-8 0c0 .136.027.265.076.384a5.015 5.015 0 00-1.97 1.48A3.002 3.002 0 014 5a1 1 0 00-2 0 5.001 5.001 0 003.182 4.659A5.005 5.005 0 005 11v1H3a1 1 0 100 2h2v1c0 .425.038.84.11 1.244A5 5 0 002 20.874a1 1 0 102 0c0-1.208.715-2.251 1.746-2.726A7 7 0 0012 22a7 7 0 006.254-3.852A3.002 3.002 0 0120 20.874a1 1 0 102 0 5 5 0 00-3.11-4.63c.072-.404.11-.82.11-1.244v-1h2a1 1 0 100-2h-2v-1c0-.465-.063-.914-.182-1.341A5.001 5.001 0 0022 5a1 1 0 10-2 0 3.002 3.002 0 01-2.105 2.865 5.015 5.015 0 00-1.971-1.481zM17 11a3 3 0 00-3-3h-1v11.9a5.002 5.002 0 004-4.9v-4zm-6 8.9V8h-1a3 3 0 00-3 3v4a5.002 5.002 0 004 4.9z" clipRule="evenodd" />
+  </svg>
+);
+
 const IconObjectsColumn = () => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" width="0.875em" height="1em" fill="currentColor">
     <path d="M48 80V240h96V80H48zM0 80C0 53.5 21.5 32 48 32h96c26.5 0 48 21.5 48 48V240c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V80zM304 272V432h96V272H304zm-48 0c0-26.5 21.5-48 48-48h96c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H304c-26.5 0-48-21.5-48-48V272zM144 368H48v64h96V368zM48 320h96c26.5 0 48 21.5 48 48v64c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V368c0-26.5 21.5-48 48-48zM304 80v64h96V80H304zm-48 0c0-26.5 21.5-48 48-48h96c26.5 0 48 21.5 48 48v64c0 26.5-21.5 48-48 48H304c-26.5 0-48-21.5-48-48V80z" />
@@ -192,7 +198,7 @@ export default function ProblemHeader({
 
   return (
     <header
-      className="relative flex h-[48px] w-full shrink-0 items-center justify-between gap-2 px-2.5 z-50 bg-white dark:bg-[#1a1a1a] border-b border-neutral-200/80 dark:border-neutral-800"
+      className="relative flex h-[48px] w-full shrink-0 items-center justify-between gap-2 px-2.5 z-50 bg-[#f0f0f0] dark:bg-[#1a1a1a]"
       style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', fontSize: '14px' }}
     >
       {/* ═══ Left section: Logo + Problem List + Prev/Next/Shuffle ═══ */}
@@ -212,13 +218,13 @@ export default function ProblemHeader({
         {/* Problem List button */}
         <Link
           href="/problems"
-          className="no-underline truncate rounded p-1 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-900 dark:hover:text-white transition-colors"
+          className="no-underline truncate rounded p-1 bg-neutral-300/70 dark:bg-neutral-700/70 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-600 hover:text-neutral-900 dark:hover:text-white transition-colors"
         >
           <IconIndent />
         </Link>
 
         {/* Prev / Next / Shuffle */}
-        <div className="flex items-center ml-2 text-neutral-500 dark:text-neutral-400">
+        <div className="flex items-center ml-2 text-neutral-600 dark:text-neutral-300">
           <NavIconBtn onClick={handlePrevProblem} disabled={!hasPrev} title="Prev Question">
             <IconChevronLeft />
           </NavIconBtn>
@@ -231,47 +237,94 @@ export default function ProblemHeader({
         </div>
       </div>
 
-      {/* ═══ Center section: Run + Submit + Note + AI ═══ */}
-      <div className="h-full py-2">
-        <div className="flex h-full items-center rounded-lg bg-neutral-100 dark:bg-neutral-800/60 overflow-hidden">
-          {/* Run */}
-          <NavIconBtn
-            onClick={onRunCode}
-            disabled={isCodeRunning}
-            title="Run"
-            className="text-[rgb(26,26,26)] dark:text-white"
-          >
-            {isCodeRunning ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <IconPlay />
-            )}
-          </NavIconBtn>
+      {/* ═══ Center section: Separate Square Boxes for Each Icon ═══ */}
+      <div className="flex items-center gap-1.5 h-full py-2 select-none">
+        {/* 1. Debugger Square */}
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="w-full h-full flex items-center justify-center text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
+                title="Debug"
+              >
+                <IconBug />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Debug</TooltipContent>
+          </Tooltip>
+        </div>
 
-          {/* Submit */}
-          <button
-            onClick={onSubmitCode}
-            disabled={isSubmitLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none font-medium text-[rgb(1,179,40)] dark:text-[rgb(43,212,82)] cursor-pointer bg-transparent hover:bg-neutral-200/50 dark:hover:bg-neutral-700/50 transition-colors disabled:opacity-50 whitespace-nowrap"
-            style={{ height: '32px', fontSize: '14px' }}
-          >
-            {isSubmitLoading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <IconCloudArrowUp />
-            )}
-            <span>Submit</span>
-          </button>
+        {/* 2. Play Square */}
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onRunCode}
+                disabled={isCodeRunning}
+                className="w-full h-full flex items-center justify-center text-neutral-800 dark:text-neutral-200 hover:text-black dark:hover:text-white transition-colors cursor-pointer disabled:opacity-40"
+                title="Run"
+              >
+                {isCodeRunning ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <IconPlay />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Run Code (Ctrl+Enter)</TooltipContent>
+          </Tooltip>
+        </div>
 
-          {/* Note */}
-          <NavIconBtn title="Note">
-            <IconNoteSticky />
-          </NavIconBtn>
+        {/* 3. Submit Box */}
+        <div className="flex h-8 items-center justify-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onSubmitCode}
+                disabled={isSubmitLoading}
+                className="flex items-center gap-1.5 px-3 h-full font-medium text-[rgb(1,179,40)] dark:text-[rgb(43,212,82)] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors cursor-pointer disabled:opacity-40 whitespace-nowrap text-sm"
+              >
+                {isSubmitLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <IconCloudArrowUp />
+                )}
+                <span>Submit</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Submit Code</TooltipContent>
+          </Tooltip>
+        </div>
 
-          {/* AI Sparkle */}
-          <NavIconBtn onClick={onOpenAi} title="Ask AI">
-            <IconSparkleGradient />
-          </NavIconBtn>
+        {/* Box 2: Note / Scratchpad Box */}
+        <div className="flex h-8 items-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="flex items-center justify-center p-[7px] text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
+                title="Note"
+              >
+                <IconNoteSticky />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Note</TooltipContent>
+          </Tooltip>
+        </div>
+
+        {/* Box 3: AI Sparkle Box */}
+        <div className="flex h-8 items-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onOpenAi}
+                className="flex items-center justify-center p-[7px] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
+                title="Ask AI"
+              >
+                <IconSparkleGradient />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Ask AI for Help</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 

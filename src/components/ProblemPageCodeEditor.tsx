@@ -278,6 +278,52 @@ export default function ProblemPageCodeEditor({
 
   const handleEditorMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
+
+    // Define exact LeetCode syntax themes
+    monaco.editor.defineTheme('leetcode-light', {
+      base: 'vs',
+      inherit: true,
+      rules: [
+        { token: 'keyword', foreground: '0000FF' },
+        { token: 'type', foreground: '267F99' },
+        { token: 'identifier', foreground: '000000' },
+        { token: 'function', foreground: '795E26' },
+        { token: 'comment', foreground: '008000', fontStyle: 'italic' },
+        { token: 'string', foreground: 'A31515' },
+        { token: 'number', foreground: '098658' },
+      ],
+      colors: {
+        'editor.background': '#FFFFFF',
+        'editor.foreground': '#000000',
+        'editorLineNumber.foreground': '#237893',
+        'editorLineNumber.activeForeground': '#0B216F',
+        'editorGutter.background': '#FFFFFF',
+      }
+    });
+
+    monaco.editor.defineTheme('leetcode-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'keyword', foreground: '569CD6' },
+        { token: 'type', foreground: '4EC9B0' },
+        { token: 'identifier', foreground: 'D4D4D4' },
+        { token: 'function', foreground: 'DCDCAA' },
+        { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
+        { token: 'string', foreground: 'CE9178' },
+        { token: 'number', foreground: 'B5CEA8' },
+      ],
+      colors: {
+        'editor.background': '#1a1a1a',
+        'editor.foreground': '#D4D4D4',
+        'editorLineNumber.foreground': '#858585',
+        'editorLineNumber.activeForeground': '#C6C6C6',
+        'editorGutter.background': '#1a1a1a',
+      }
+    });
+
+    monaco.editor.setTheme(theme === 'dark' ? 'leetcode-dark' : 'leetcode-light');
+
     editor.onDidChangeCursorPosition((e: any) => {
       setCursorPos({
         line: e.position.lineNumber,
@@ -295,7 +341,7 @@ export default function ProblemPageCodeEditor({
       <div
         key={lang}
         onClick={() => handleLanguageChange(lang)}
-        className={`flex items-center justify-between px-3 py-1.5 rounded-md text-xs cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors ${
+        className={`flex items-center justify-between px-3 py-1.5 rounded-md text-[13.5px] cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors ${
           isSelected ? 'font-semibold text-neutral-900 dark:text-white' : 'text-neutral-700 dark:text-neutral-300'
         }`}
       >
@@ -318,7 +364,7 @@ export default function ProblemPageCodeEditor({
     <div className="w-full h-full flex flex-col bg-white dark:bg-[#1a1a1a] overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', fontSize: '14px', color: 'rgb(38, 38, 38)' }}>
       {/* Tab bar - same style as LeetCode flexlayout: 36px, rgba(0,0,0,0.02) bg */}
       <div
-        className="w-full flex items-center justify-between px-1.5 shrink-0 group border-b border-black/[0.06] dark:border-white/[0.06]"
+        className="w-full flex items-center justify-between px-1.5 shrink-0 group"
         style={{
           height: '36px',
           backgroundColor: 'rgba(0,0,0,0.02)',
@@ -329,8 +375,8 @@ export default function ProblemPageCodeEditor({
           className="relative flex items-center gap-1.5 cursor-default"
           style={{
             padding: '4px 8px',
-            borderRadius: '5px 5px 0 0',
-            height: '36px',
+            borderRadius: '5px',
+            height: '28px',
             fontWeight: 500,
             color: 'rgb(26, 26, 26)',
             fontSize: '14px',
@@ -341,8 +387,6 @@ export default function ProblemPageCodeEditor({
         >
           <Code2 style={{ width: '14px', height: '14px', opacity: 0.7 }} />
           <span>Code</span>
-          {/* Active dark little line under the tab */}
-          <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-neutral-900 dark:bg-white rounded-full" />
         </button>
 
         {/* Right: Maximize & Fold/Collapse Options on Hover */}
@@ -459,14 +503,14 @@ export default function ProblemPageCodeEditor({
           language={currentLangConfig.compilerId}
           value={sourceCode}
           onChange={(value) => setSourceCode(value ?? "")}
-          theme={theme === 'dark' ? 'vs-dark' : 'light'}
+          theme={theme === 'dark' ? 'leetcode-dark' : 'leetcode-light'}
           onMount={handleEditorMount}
           options={{
             automaticLayout: true,
             minimap: { enabled: false },
             fontSize: 13,
-            lineHeight: 20,
-            fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace",
+            lineHeight: 18,
+            fontFamily: 'Consolas, "Courier New", monospace',
             tabSize: 4,
             scrollBeyondLastLine: false,
             folding: true,

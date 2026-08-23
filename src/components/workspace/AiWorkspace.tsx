@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useTheme } from "next-themes";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search,
   FolderKanban,
@@ -41,6 +42,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import SettingsView from "./SettingsView";
+import GammaProblemCanvas from "../problem-builder/GammaProblemCanvas";
+import { GeneratedProblem } from "@/types/generatedProblem";
 
 interface HistoryItem {
   id: string;
@@ -58,11 +61,12 @@ interface Message {
   problemDetails?: {
     title: string;
     level: string;
-    examples: string;
-    constraints: string;
+    examples: any;
+    constraints: any;
     testCases?: Array<{ input: string; output: string }>;
     hints?: string[];
   };
+  generatedProblem?: GeneratedProblem;
 }
 
 interface ModelDefinition {
@@ -173,6 +177,14 @@ export default function AiWorkspace() {
 
   // Model Search
   const [modelDropdownSearch, setModelDropdownSearch] = useState("");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams?.get("view") === "settings") {
+      setActiveView("settings");
+    }
+  }, [searchParams]);
 
   const [activeMode, setActiveMode] = useState<string>("Generate Problem");
   const [difficulty, setDifficulty] = useState<"Easy" | "Medium" | "Hard">("Medium");
@@ -352,69 +364,19 @@ export default function AiWorkspace() {
 
     setMessages((prev) => [...prev, userMessage]);
     setPrompt("");
-    setIsLoading(true);
 
     saveHistoryItem(textToSend, difficulty, selectedTopic);
 
+    // Save prompt & generation params for Problem Page live generation
     try {
-      let customInstructions = "";
-      let memories = [];
-      try {
-        customInstructions = localStorage.getItem("easycode_custom_instructions") || "";
-        const memSaved = localStorage.getItem("easycode_user_memories");
-        if (memSaved) memories = JSON.parse(memSaved);
-      } catch (e) {}
+      sessionStorage.setItem("easycode_live_generate_prompt", textToSend);
+      sessionStorage.setItem("easycode_live_generate_diff", difficulty);
+      sessionStorage.setItem("easycode_live_generate_topic", selectedTopic || "Algorithms");
+      sessionStorage.setItem("easycode_live_generate_model", activeModel || "gemini-2.5-flash");
+    } catch (e) {}
 
-      const res = await fetch("/api/ai/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: textToSend,
-          difficulty,
-          topic: selectedTopic,
-          focus: activeMode,
-          model: activeModel,
-          customInstructions,
-          customKeys: apiKeys,
-          memories,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data.success && data.problem) {
-        const p = data.problem;
-        const starterCode = p.starterCode?.python || p.starterCode?.cpp || p.starterCode?.javascript || "";
-        const lang = p.starterCode?.python ? "Python" : p.starterCode?.cpp ? "C++" : "JavaScript";
-
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: `${p.description}\n\n**Constraints:**\n${p.constraints}`,
-          codeSnippet: starterCode ? { language: lang, code: starterCode } : undefined,
-          problemDetails: {
-            title: p.title,
-            level: p.level,
-            examples: p.examples,
-            constraints: p.constraints,
-            testCases: p.testCases,
-            hints: p.hints,
-          },
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
-      } else {
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: data.message || "Could not generate response. Please check your API key in Settings.",
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
-      }
-    } catch (error) {
-      toast.error("Failed to generate response, please try again.");
-    } finally {
-      setIsLoading(false);
-    }
+    toast.info("Starting live problem builder on Problem Page...");
+    router.push(`/problem/c0000000-0000-0000-0000-000000000001?generate=true&prompt=${encodeURIComponent(textToSend)}&difficulty=${encodeURIComponent(difficulty)}&topic=${encodeURIComponent(selectedTopic || "Algorithms")}`);
   };
 
   const copyText = (text: string, id: string) => {
@@ -857,7 +819,16 @@ export default function AiWorkspace() {
                             : "bg-white dark:bg-[#242321] border border-[#E8E4DB] dark:border-[#33302C] text-[#242220] dark:text-[#E2DFD8] shadow-sm rounded-tl-xs"
                         }`}
                       >
-                        {msg.problemDetails && (
+                        {msg.generatedProblem ? (
+                          <div className="w-full">
+                            <GammaProblemCanvas
+                              problem={msg.generatedProblem}
+                              onSolveInEditor={() => {
+                                window.location.href = "/problem/c0000000-0000-0000-0000-000000000001";
+                              }}
+                            />
+                          </div>
+                        ) : msg.problemDetails ? (
                           <div className="mb-4 pb-4 border-b border-black/[0.08] dark:border-white/[0.08]">
                             <div className="flex items-center justify-between gap-2 mb-2">
                               <div className="flex items-center gap-2">
@@ -870,7 +841,7 @@ export default function AiWorkspace() {
                               </div>
 
                               <Link
-                                href="/problems"
+                                href="/problem/c0000000-0000-0000-0000-000000000001"
                                 className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100 shadow-xs transition-colors shrink-0"
                               >
                                 <Play className="w-3.5 h-3.5 fill-current" />
@@ -882,7 +853,7 @@ export default function AiWorkspace() {
                               <div className="mt-3 p-3 rounded-xl bg-black/[0.03] dark:bg-white/[0.03] text-xs font-mono space-y-1">
                                 <div className="font-semibold text-neutral-800 dark:text-neutral-200">Examples:</div>
                                 <pre className="whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
-                                  {msg.problemDetails.examples}
+                                  {typeof msg.problemDetails.examples === 'string' ? msg.problemDetails.examples : JSON.stringify(msg.problemDetails.examples, null, 2)}
                                 </pre>
                               </div>
                             )}
@@ -891,16 +862,16 @@ export default function AiWorkspace() {
                               <div className="mt-2 p-3 rounded-xl bg-black/[0.03] dark:bg-white/[0.03] text-xs font-mono space-y-1">
                                 <div className="font-semibold text-neutral-800 dark:text-neutral-200">Constraints:</div>
                                 <pre className="whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
-                                  {msg.problemDetails.constraints}
+                                  {Array.isArray(msg.problemDetails.constraints) ? msg.problemDetails.constraints.join('\n') : msg.problemDetails.constraints}
                                 </pre>
                               </div>
                             )}
                           </div>
+                        ) : (
+                          <p className="whitespace-pre-line">{msg.content}</p>
                         )}
 
-                        <p className="whitespace-pre-line">{msg.content}</p>
-
-                        {msg.codeSnippet && (
+                        {!msg.generatedProblem && msg.codeSnippet && (
                           <div className="mt-4 rounded-xl bg-[#181716] p-3.5 border border-white/[0.08] text-xs font-mono text-neutral-200">
                             <div className="flex items-center justify-between pb-2 border-b border-white/[0.06] text-[11px] text-neutral-400 uppercase font-semibold">
                               <span>Starter Solution ({msg.codeSnippet.language})</span>

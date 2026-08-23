@@ -38,39 +38,44 @@ export default function ProblemPageDescription({
     );
   };
 
-  // LeetCode exact colors for difficulty
+  // LeetCode exact colors for difficulty (darker, rich tones)
   const levelColorMap: Record<string, string> = {
-    Easy: "rgb(28, 184, 184)",    // #1cb8b8
-    Medium: "rgb(255, 176, 24)",  // #ffb018
-    Hard: "rgb(255, 55, 95)",     // #ff375f
+    Easy: "rgb(0, 184, 163)",     // Darker teal #00b8a3
+    Medium: "rgb(255, 184, 0)",   // Darker amber #ffb800
+    Hard: "rgb(255, 45, 85)",     // Darker red #ff2d55
   };
 
   const levelColor = levelColorMap[problemInfo.level] || levelColorMap["Easy"];
 
   // Exact LeetCode code tag styles
   const codeStyle: React.CSSProperties = {
-    fontFamily: 'Menlo, Menlo-fallback, sans-serif',
-    fontSize: '12px',
+    fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    fontSize: '12.5px',
     lineHeight: '16px',
+    letterSpacing: '0.025em',
     color: 'rgba(38, 38, 38, 0.75)',
     backgroundColor: 'rgba(0, 10, 32, 0.03)',
     borderRadius: '5px',
-    padding: '2px 5px',
+    padding: '2px 4px',
     border: '0.8px solid rgba(0, 0, 0, 0.05)',
     display: 'inline',
+    fontFeatureSettings: '"tnum"',
   };
 
   // Exact LeetCode example pre container styles
   const preStyle: React.CSSProperties = {
-    fontFamily: 'Menlo, Menlo-fallback, sans-serif',
+    fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     fontSize: '14px',
     lineHeight: '22px',
-    color: 'rgba(0, 0, 0, 0.55)',
+    letterSpacing: '0.015em',
+    color: 'rgb(38, 38, 38)',
     backgroundColor: 'transparent',
     borderLeft: '1.6px solid rgba(0, 0, 0, 0.08)',
     padding: '0 0 0 16px',
-    margin: '0 0 24px 0',
+    margin: '4px 0 20px 0',
     borderRadius: '0',
+    whiteSpace: 'pre-wrap',
+    fontFeatureSettings: '"tnum"',
   };
 
   // Exact LeetCode paragraph style
@@ -84,11 +89,12 @@ export default function ProblemPageDescription({
     padding: 0,
   };
 
-  // Exact LeetCode dark label style
-  const labelStyle: React.CSSProperties = {
+  // Exact LeetCode dark label style inside pre
+  const strongInPreStyle: React.CSSProperties = {
+    fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     fontWeight: 700,
     color: 'rgb(38, 38, 38)',
-    marginRight: '6px',
+    letterSpacing: '0.015em',
   };
 
   return (
@@ -115,19 +121,32 @@ export default function ProblemPageDescription({
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
           }}
         >
-          1. Two Sum
+          {problemInfo.title || "1. Two Sum"}
         </h1>
-        <div
-          className="flex items-center gap-1 shrink-0 select-none"
-          style={{
-            fontSize: '13px',
-            color: 'rgb(28, 184, 184)',
-            fontWeight: 500,
-          }}
-        >
-          <span>Solved</span>
-          <CheckCircle2 style={{ width: '15px', height: '15px' }} />
-        </div>
+        {isProblemSolved((problemInfo._id as string) || "") ? (
+          <div
+            className="flex items-center gap-1 shrink-0 select-none"
+            style={{
+              fontSize: '13px',
+              color: 'rgb(0, 184, 163)',
+              fontWeight: 600,
+            }}
+          >
+            <span>Solved</span>
+            <CheckCircle2 style={{ width: '15px', height: '15px' }} />
+          </div>
+        ) : (
+          <div
+            className="flex items-center gap-1 shrink-0 select-none"
+            style={{
+              fontSize: '13px',
+              color: 'rgb(255, 184, 0)',
+              fontWeight: 600,
+            }}
+          >
+            <span>Attempted</span>
+          </div>
+        )}
       </div>
 
       {/* Badges row */}
@@ -202,66 +221,46 @@ export default function ProblemPageDescription({
 
       {/* Description paragraphs */}
       <p style={pStyle}>
-        You are given an array of integers <code style={codeStyle}>nums</code> and an integer <code style={codeStyle}>target</code>, return <em>indices of the two numbers such that they add up to</em> <code style={codeStyle}>target</code>.
+        You are given an array of integers <code style={codeStyle}>nums</code>&nbsp;and an integer <code style={codeStyle}>target</code>, return <em>indices of the two numbers such that they add up to <code style={codeStyle}>target</code></em>.
       </p>
 
       <p style={pStyle}>
-        You may assume that each input would have <strong style={{ fontWeight: 700, color: 'rgb(38, 38, 38)' }}><em>exactly</em> one solution</strong>, and you may not use the <em>same</em> element twice.
+        You may assume that each input would have <strong><em>exactly</em> one solution</strong>, and you may not use the <em>same</em> element twice.
       </p>
 
-      {/* Increased spacing between problem description and examples (User request) */}
-      <p style={{ ...pStyle, margin: '0 0 28px 0' }}>
+      <p style={pStyle}>
         You can return the answer in any order.
       </p>
 
+      <p style={{ margin: '8px 0' }}>&nbsp;</p>
+
       {/* Example 1 */}
-      <p style={{ ...pStyle, margin: '0 0 6px 0' }}>
-        <strong style={{ fontWeight: 700, color: 'rgb(38, 38, 38)' }}>Example 1:</strong>
+      <p style={{ ...pStyle, margin: '0 0 2px 0' }}>
+        <strong style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', fontWeight: 700, color: 'rgb(38, 38, 38)', fontSize: '14px' }}>Example 1:</strong>
       </p>
-      <div style={preStyle}>
-        <div>
-          <strong style={labelStyle}>Input:</strong>
-          <span>nums = [2,7,11,15], target = 9</span>
-        </div>
-        <div>
-          <strong style={labelStyle}>Output:</strong>
-          <span>[0,1]</span>
-        </div>
-        <div>
-          <strong style={labelStyle}>Explanation:</strong>
-          <span>Because nums[0] + nums[1] == 9, we return [0, 1].</span>
-        </div>
-      </div>
+      <pre style={preStyle}>
+<strong style={strongInPreStyle}>Input:</strong> nums = [2,7,11,15], target = 9{'\n'}
+<strong style={strongInPreStyle}>Output:</strong> [0,1]{'\n'}
+<strong style={strongInPreStyle}>Explanation:</strong> Because nums[0] + nums[1] == 9, we return [0, 1].
+      </pre>
 
       {/* Example 2 */}
-      <p style={{ ...pStyle, margin: '0 0 6px 0' }}>
-        <strong style={{ fontWeight: 700, color: 'rgb(38, 38, 38)' }}>Example 2:</strong>
+      <p style={{ ...pStyle, margin: '0 0 2px 0' }}>
+        <strong style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', fontWeight: 700, color: 'rgb(38, 38, 38)', fontSize: '14px' }}>Example 2:</strong>
       </p>
-      <div style={preStyle}>
-        <div>
-          <strong style={labelStyle}>Input:</strong>
-          <span>nums = [3,2,4], target = 6</span>
-        </div>
-        <div>
-          <strong style={labelStyle}>Output:</strong>
-          <span>[1,2]</span>
-        </div>
-      </div>
+      <pre style={preStyle}>
+<strong style={strongInPreStyle}>Input:</strong> nums = [3,2,4], target = 6{'\n'}
+<strong style={strongInPreStyle}>Output:</strong> [1,2]
+      </pre>
 
       {/* Example 3 */}
-      <p style={{ ...pStyle, margin: '0 0 6px 0' }}>
-        <strong style={{ fontWeight: 700, color: 'rgb(38, 38, 38)' }}>Example 3:</strong>
+      <p style={{ ...pStyle, margin: '0 0 2px 0' }}>
+        <strong style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', fontWeight: 700, color: 'rgb(38, 38, 38)', fontSize: '14px' }}>Example 3:</strong>
       </p>
-      <div style={{ ...preStyle, margin: '0 0 32px 0' }}>
-        <div>
-          <strong style={labelStyle}>Input:</strong>
-          <span>nums = [3,3], target = 6</span>
-        </div>
-        <div>
-          <strong style={labelStyle}>Output:</strong>
-          <span>[0,1]</span>
-        </div>
-      </div>
+      <pre style={{ ...preStyle, margin: '4px 0 28px 0' }}>
+<strong style={strongInPreStyle}>Input:</strong> nums = [3,3], target = 6{'\n'}
+<strong style={strongInPreStyle}>Output:</strong> [0,1]
+      </pre>
 
       {/* Constraints section with generous LeetCode spacing (User request) */}
       <p style={{ ...pStyle, margin: '0 0 12px 0' }}>

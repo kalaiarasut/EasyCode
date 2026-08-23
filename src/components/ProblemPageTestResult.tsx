@@ -163,7 +163,7 @@ export default function ProblemPageTestResult({
     <div className="w-full h-full flex flex-col bg-white dark:bg-[#1a1a1a] overflow-hidden select-none" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', fontSize: '14px', color: 'rgb(38, 38, 38)' }}>
       {/* Console Header Tabs - Exact LeetCode flexlayout tab bar: 36px, rgba(0,0,0,0.02) bg, 8px top radius */}
       <div
-        className="w-full flex items-center justify-between px-1.5 shrink-0 group border-b border-black/[0.06] dark:border-white/[0.06]"
+        className="w-full flex items-center justify-between px-1.5 shrink-0 group"
         style={{
           height: '36px',
           backgroundColor: 'rgba(0,0,0,0.02)',
@@ -176,8 +176,8 @@ export default function ProblemPageTestResult({
             className="relative flex items-center gap-1.5 cursor-pointer transition-colors"
             style={{
               padding: '4px 8px',
-              borderRadius: '5px 5px 0 0',
-              height: '36px',
+              borderRadius: '5px',
+              height: '28px',
               fontWeight: activeTab === 'testcase' ? 500 : 400,
               color: activeTab === 'testcase' ? 'rgb(26, 26, 26)' : 'rgba(0, 0, 0, 0.55)',
               fontSize: '14px',
@@ -188,9 +188,6 @@ export default function ProblemPageTestResult({
           >
             <CheckSquare style={{ width: '14px', height: '14px', color: 'rgb(46, 164, 79)' }} />
             <span>Testcase</span>
-            {activeTab === 'testcase' && (
-              <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-neutral-900 dark:bg-white rounded-full" />
-            )}
           </button>
 
           <button
@@ -198,8 +195,8 @@ export default function ProblemPageTestResult({
             className="relative flex items-center gap-1.5 cursor-pointer transition-colors"
             style={{
               padding: '4px 8px',
-              borderRadius: '5px 5px 0 0',
-              height: '36px',
+              borderRadius: '5px',
+              height: '28px',
               fontWeight: activeTab === 'testresult' ? 500 : 400,
               color: activeTab === 'testresult' ? 'rgb(26, 26, 26)' : 'rgba(0, 0, 0, 0.55)',
               fontSize: '14px',
@@ -210,9 +207,6 @@ export default function ProblemPageTestResult({
           >
             <Terminal style={{ width: '14px', height: '14px', opacity: 0.5 }} />
             <span>Test Result</span>
-            {activeTab === 'testresult' && (
-              <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-neutral-900 dark:bg-white rounded-full" />
-            )}
           </button>
         </div>
 

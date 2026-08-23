@@ -48,6 +48,7 @@ export function useGammaOrchestrator({
     const baseDelays: Record<GenerationSectionKey, number> = {
       title: 500,
       difficulty: 350,
+      topics: 300,
       description: 600,
       constraints: 400,
       examples: 750,
