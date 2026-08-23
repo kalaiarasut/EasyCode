@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Lock, Tag, Lightbulb } from 'lucide-react';
+import { CheckCircle2, Building2, Tag, Lightbulb } from 'lucide-react';
 import ProblemPageCollapseButton from './ProblemPageCollapseButton';
 import { IUser } from '@/models/User';
 import { Session } from 'next-auth';
@@ -190,7 +190,7 @@ export default function ProblemPageDescription({
           className="flex items-center gap-1 cursor-pointer"
           style={{
             fontSize: '12px',
-            color: 'rgb(255, 176, 24)',
+            color: 'rgba(0, 0, 0, 0.55)',
             backgroundColor: 'rgba(0, 0, 0, 0.06)',
             borderRadius: '9999px',
             padding: '4px 8px',
@@ -198,7 +198,7 @@ export default function ProblemPageDescription({
             border: 'none',
           }}
         >
-          <Lock style={{ width: '12px', height: '12px', color: 'rgb(255, 176, 24)' }} />
+          <Building2 style={{ width: '12px', height: '12px' }} />
           <span>Companies</span>
         </button>
 

@@ -6,37 +6,43 @@ import problemModel from "@/models/Problem";
 import mongoose from "mongoose";
 
 export async function GET(req: NextRequest) {
-
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    if (!token) {
-        return NextResponse.json({
-            success: false,
-            message: "Unauthorized"
-        }, { status: 400 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const problemId = searchParams.get("problemId");
-
-    if (!problemId) {
-        return NextResponse.json({
-            success: false,
-            message: "Required problemId"
-        }, { status: 400 });
-    }
-
-    await connectToDb();
     try {
+        const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+        if (!token || !token._id) {
+            return NextResponse.json({
+                success: true,
+                submissions: []
+            }, { status: 200 });
+        }
+
+        const { searchParams } = new URL(req.url);
+        const problemId = searchParams.get("problemId");
+
+        if (!problemId) {
+            return NextResponse.json({
+                success: true,
+                submissions: []
+            }, { status: 200 });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(problemId) || !mongoose.Types.ObjectId.isValid(token._id as string)) {
+            return NextResponse.json({
+                success: true,
+                submissions: []
+            }, { status: 200 });
+        }
+
+        await connectToDb();
         const existedProblem = await problemModel.findById(problemId);
         if (!existedProblem) {
             return NextResponse.json({
-                success: false,
-                message: "Problem not found"
-            }, { status: 404 });
+                success: true,
+                submissions: []
+            }, { status: 200 });
         }
 
         const submittedCodes = await userModel.aggregate([
-            { $match: { _id: new mongoose.Types.ObjectId(token._id) } },
+            { $match: { _id: new mongoose.Types.ObjectId(token._id as string) } },
             {
                 $lookup: {
                     from: "submissions",
@@ -49,7 +55,7 @@ export async function GET(req: NextRequest) {
                             $match: {
                                 $expr: {
                                     $and: [
-                                        { $in: ["$_id", "$$subIds"] },
+                                        { $in: ["$_id", { $ifNull: ["$$subIds", []] }] },
                                         { $eq: ["$problemId", "$$targetProblemId"] }
                                     ]
                                 }
@@ -73,10 +79,10 @@ export async function GET(req: NextRequest) {
             submissions: submittedCodes[0]?.submissionDetails || []
         });
     } catch (error) {
-        console.error("Something went wrong while fetching submissions for this problem: ", error);
+        console.error("Error fetching submissions:", error);
         return NextResponse.json({
-            success: false,
-            message: "Something went wrong while fetching submissions for this problem"
-        }, { status: 500 });
+            success: true,
+            submissions: []
+        }, { status: 200 });
     }
 }

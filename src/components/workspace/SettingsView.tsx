@@ -22,9 +22,25 @@ import {
   HardDrive,
   Terminal,
   Activity,
-  Lock
+  Lock,
+  Presentation,
+  FileText,
+  BookOpen,
+  TestTube2,
+  Rocket,
+  FileSpreadsheet,
+  Download,
+  Code2,
+  Wand2,
+  FileCheck2,
+  Eye,
+  Pencil,
+  RotateCcw,
+  Copy,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { BUILT_IN_SKILLS, DEFAULT_AI_RULES, AiSkill, AiRule } from "@/types/skillsAndRules";
 
 interface SettingsViewProps {
   currentModel: string;
@@ -56,7 +72,7 @@ export interface ModelGroup {
 
 export default function SettingsView({ currentModel, onModelSelect }: SettingsViewProps) {
   const { data: session } = useSession();
-  const [activeTab, setActiveTab] = useState<"general" | "models" | "memory" | "apikeys">("models");
+  const [activeTab, setActiveTab] = useState<"models" | "apikeys" | "skills" | "rules" | "memory" | "general">("models");
 
   // Form State
   const [fullName, setFullName] = useState("");
@@ -73,6 +89,31 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [selectedProviderFilter, setSelectedProviderFilter] = useState("All");
   const [modelsDisplayMode, setModelsDisplayMode] = useState<"activeOnly" | "all">("activeOnly");
+
+  // Skills State
+  const [skills, setSkills] = useState<AiSkill[]>(BUILT_IN_SKILLS);
+  const [skillSearchQuery, setSkillSearchQuery] = useState("");
+  const [selectedSkillCategory, setSelectedSkillCategory] = useState("All");
+  const [showAddSkillModal, setShowAddSkillModal] = useState(false);
+  const [selectedSkillToView, setSelectedSkillToView] = useState<AiSkill | null>(null);
+  const [editingSkill, setEditingSkill] = useState<AiSkill | null>(null);
+  const [newSkillName, setNewSkillName] = useState("");
+  const [newSkillMention, setNewSkillMention] = useState("");
+  const [newSkillCategory, setNewSkillCategory] = useState<AiSkill["category"]>("Document");
+  const [newSkillDescription, setNewSkillDescription] = useState("");
+  const [newSkillPromptModifier, setNewSkillPromptModifier] = useState("");
+  const [newSkillOutputFormat, setNewSkillOutputFormat] = useState<AiSkill["outputFormat"]>("markdown");
+  const [newSkillExamplePrompt, setNewSkillExamplePrompt] = useState("");
+
+  // Rules State
+  const [rules, setRules] = useState<AiRule[]>(DEFAULT_AI_RULES);
+  const [ruleSearchQuery, setRuleSearchQuery] = useState("");
+  const [selectedRuleCategory, setSelectedRuleCategory] = useState("All");
+  const [showAddRuleModal, setShowAddRuleModal] = useState(false);
+  const [newRuleTitle, setNewRuleTitle] = useState("");
+  const [newRuleCategory, setNewRuleCategory] = useState<AiRule["category"]>("Coding");
+  const [newRuleDescription, setNewRuleDescription] = useState("");
+  const [newRuleText, setNewRuleText] = useState("");
 
   // Memories State
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
@@ -133,6 +174,20 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       const savedLang = localStorage.getItem("easycode_pref_lang");
       if (savedLang) setPreferredLanguage(savedLang);
 
+      const savedSkills = localStorage.getItem("easycode_ai_skills");
+      if (savedSkills) {
+        try {
+          setSkills(JSON.parse(savedSkills));
+        } catch (e) {}
+      }
+
+      const savedRules = localStorage.getItem("easycode_ai_rules");
+      if (savedRules) {
+        try {
+          setRules(JSON.parse(savedRules));
+        } catch (e) {}
+      }
+
       const savedMemories = localStorage.getItem("easycode_user_memories");
       if (savedMemories) {
         setMemories(JSON.parse(savedMemories));
@@ -179,6 +234,196 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       }
     } catch (e) {}
   }, [session]);
+
+  const handleToggleSkill = (id: string) => {
+    setSkills((prev) => {
+      const updated = prev.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s));
+      try {
+        localStorage.setItem("easycode_ai_skills", JSON.stringify(updated));
+      } catch (e) {}
+      const target = updated.find((s) => s.id === id);
+      toast.success(`${target?.name} ${target?.enabled ? "enabled" : "disabled"}`);
+      return updated;
+    });
+  };
+
+  const handleAddCustomSkill = () => {
+    if (!newSkillName.trim() || !newSkillMention.trim()) {
+      toast.error("Skill name and @mention shortcut are required");
+      return;
+    }
+    const mentionKey = newSkillMention.startsWith("@") ? newSkillMention : `@${newSkillMention}`;
+    const newSkill: AiSkill = {
+      id: `custom-skill-${Date.now()}`,
+      name: newSkillName.trim(),
+      mentionKey: mentionKey.toLowerCase(),
+      category: newSkillCategory,
+      description: newSkillDescription.trim() || "Custom AI Skill",
+      badge: "Custom Skill",
+      iconName: "Sparkles",
+      enabled: true,
+      systemPromptModifier: newSkillPromptModifier.trim(),
+      outputFormat: "markdown",
+      examplePrompt: `Use ${mentionKey} to analyze the problem`,
+    };
+    setSkills((prev) => {
+      const updated = [newSkill, ...prev];
+      try {
+        localStorage.setItem("easycode_ai_skills", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    setNewSkillName("");
+    setNewSkillMention("");
+    setNewSkillDescription("");
+    setNewSkillPromptModifier("");
+    setShowAddSkillModal(false);
+    toast.success(`Skill ${newSkill.mentionKey} created!`);
+  };
+
+  const handleDeleteSkill = (id: string) => {
+    setSkills((prev) => {
+      const updated = prev.filter((s) => s.id !== id);
+      try {
+        localStorage.setItem("easycode_ai_skills", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    if (selectedSkillToView?.id === id) setSelectedSkillToView(null);
+    if (editingSkill?.id === id) setEditingSkill(null);
+    toast.success("Skill removed");
+  };
+
+  const handleSaveEditSkill = () => {
+    if (!editingSkill) return;
+    if (!editingSkill.name.trim() || !editingSkill.mentionKey.trim()) {
+      toast.error("Skill name and @mention shortcut are required");
+      return;
+    }
+    const mentionKey = editingSkill.mentionKey.startsWith("@") ? editingSkill.mentionKey : `@${editingSkill.mentionKey}`;
+    const updatedSkill: AiSkill = {
+      ...editingSkill,
+      name: editingSkill.name.trim(),
+      mentionKey: mentionKey.toLowerCase(),
+      description: editingSkill.description.trim(),
+      systemPromptModifier: editingSkill.systemPromptModifier.trim(),
+      examplePrompt: editingSkill.examplePrompt.trim(),
+    };
+    setSkills((prev) => {
+      const updated = prev.map((s) => (s.id === updatedSkill.id ? updatedSkill : s));
+      try {
+        localStorage.setItem("easycode_ai_skills", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    setEditingSkill(null);
+    if (selectedSkillToView?.id === updatedSkill.id) {
+      setSelectedSkillToView(updatedSkill);
+    }
+    toast.success(`Skill ${updatedSkill.mentionKey} updated successfully!`);
+  };
+
+  const handleResetSingleSkill = (id: string) => {
+    const defaultSkill = BUILT_IN_SKILLS.find((s) => s.id === id);
+    if (!defaultSkill) {
+      toast.error("No default configuration found for this skill");
+      return;
+    }
+    setSkills((prev) => {
+      const updated = prev.map((s) => (s.id === id ? { ...defaultSkill } : s));
+      try {
+        localStorage.setItem("easycode_ai_skills", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    if (selectedSkillToView?.id === id) {
+      setSelectedSkillToView(defaultSkill);
+    }
+    toast.success(`Skill ${defaultSkill.mentionKey} reset to default!`);
+  };
+
+  const handleResetAllSkills = () => {
+    setSkills(BUILT_IN_SKILLS);
+    try {
+      localStorage.setItem("easycode_ai_skills", JSON.stringify(BUILT_IN_SKILLS));
+    } catch (e) {}
+    setSelectedSkillToView(null);
+    setEditingSkill(null);
+    toast.success("All AI Skills reset to factory default configuration!");
+  };
+
+  const handleToggleRule = (id: string) => {
+    setRules((prev) => {
+      const updated = prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r));
+      try {
+        localStorage.setItem("easycode_ai_rules", JSON.stringify(updated));
+      } catch (e) {}
+      const target = updated.find((r) => r.id === id);
+      toast.success(`Rule "${target?.title}" ${target?.enabled ? "enabled" : "disabled"}`);
+      return updated;
+    });
+  };
+
+  const handleAddCustomRule = () => {
+    if (!newRuleTitle.trim() || !newRuleText.trim()) {
+      toast.error("Rule title and directive text are required");
+      return;
+    }
+    const newRule: AiRule = {
+      id: `custom-rule-${Date.now()}`,
+      title: newRuleTitle.trim(),
+      category: newRuleCategory,
+      description: newRuleDescription.trim() || "Custom system rule directive",
+      ruleText: newRuleText.trim(),
+      enabled: true,
+      isBuiltIn: false,
+    };
+    setRules((prev) => {
+      const updated = [newRule, ...prev];
+      try {
+        localStorage.setItem("easycode_ai_rules", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    setNewRuleTitle("");
+    setNewRuleDescription("");
+    setNewRuleText("");
+    setShowAddRuleModal(false);
+    toast.success(`Rule "${newRule.title}" added!`);
+  };
+
+  const handleDeleteRule = (id: string) => {
+    setRules((prev) => {
+      const updated = prev.filter((r) => r.id !== id);
+      try {
+        localStorage.setItem("easycode_ai_rules", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    toast.success("Rule deleted");
+  };
+
+  const filteredSkills = useMemo(() => {
+    return skills.filter((s) => {
+      const matchesSearch =
+        s.name.toLowerCase().includes(skillSearchQuery.toLowerCase()) ||
+        s.mentionKey.toLowerCase().includes(skillSearchQuery.toLowerCase()) ||
+        s.description.toLowerCase().includes(skillSearchQuery.toLowerCase());
+      const matchesCategory = selectedSkillCategory === "All" || s.category === selectedSkillCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [skills, skillSearchQuery, selectedSkillCategory]);
+
+  const filteredRules = useMemo(() => {
+    return rules.filter((r) => {
+      const matchesSearch =
+        r.title.toLowerCase().includes(ruleSearchQuery.toLowerCase()) ||
+        r.ruleText.toLowerCase().includes(ruleSearchQuery.toLowerCase()) ||
+        r.description.toLowerCase().includes(ruleSearchQuery.toLowerCase());
+      const matchesCategory = selectedRuleCategory === "All" || r.category === selectedRuleCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [rules, ruleSearchQuery, selectedRuleCategory]);
 
   const saveGeneralSettings = () => {
     try {
@@ -894,10 +1139,10 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-[#E8E4DB] dark:border-[#2D2B28] gap-6 text-xs font-medium">
+      <div className="flex border-b border-[#E8E4DB] dark:border-[#2D2B28] gap-5 text-xs font-medium overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab("models")}
-          className={`pb-2.5 transition-colors relative ${
+          className={`pb-2.5 transition-colors relative whitespace-nowrap ${
             activeTab === "models"
               ? "text-[#1C1B19] dark:text-white font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#1C1B19] dark:after:bg-white"
               : "text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white"
@@ -908,7 +1153,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
 
         <button
           onClick={() => setActiveTab("apikeys")}
-          className={`pb-2.5 transition-colors relative ${
+          className={`pb-2.5 transition-colors relative whitespace-nowrap ${
             activeTab === "apikeys"
               ? "text-[#1C1B19] dark:text-white font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#1C1B19] dark:after:bg-white"
               : "text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white"
@@ -918,8 +1163,32 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         </button>
 
         <button
+          onClick={() => setActiveTab("skills")}
+          className={`pb-2.5 transition-colors relative whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === "skills"
+              ? "text-[#1C1B19] dark:text-white font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#1C1B19] dark:after:bg-white"
+              : "text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white"
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+          <span>AI Skills & Generators</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("rules")}
+          className={`pb-2.5 transition-colors relative whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === "rules"
+              ? "text-[#1C1B19] dark:text-white font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#1C1B19] dark:after:bg-white"
+              : "text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white"
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+          <span>Rules & Directives</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("memory")}
-          className={`pb-2.5 transition-colors relative ${
+          className={`pb-2.5 transition-colors relative whitespace-nowrap ${
             activeTab === "memory"
               ? "text-[#1C1B19] dark:text-white font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#1C1B19] dark:after:bg-white"
               : "text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white"
@@ -930,7 +1199,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
 
         <button
           onClick={() => setActiveTab("general")}
-          className={`pb-2.5 transition-colors relative ${
+          className={`pb-2.5 transition-colors relative whitespace-nowrap ${
             activeTab === "general"
               ? "text-[#1C1B19] dark:text-white font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#1C1B19] dark:after:bg-white"
               : "text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white"
@@ -1833,6 +2102,719 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
               Save API Keys & Endpoints
             </button>
           </div>
+        </div>
+      )}
+
+      {/* TAB: AI SKILLS & GENERATORS */}
+      {activeTab === "skills" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="space-y-1">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#8C877D] dark:text-[#6E6A63]">
+                AI Skills & Document Generators ({skills.filter((s) => s.enabled).length} Enabled)
+              </h2>
+              <p className="text-xs text-[#7A756C] dark:text-[#8C8880]">
+                Specialized generator engines invoked with @mention shortcuts (e.g. <span className="font-mono text-amber-600 dark:text-amber-400 font-semibold">@slides</span>, <span className="font-mono text-amber-600 dark:text-amber-400 font-semibold">@pdf-report</span>, <span className="font-mono text-amber-600 dark:text-amber-400 font-semibold">@docx</span>, <span className="font-mono text-amber-600 dark:text-amber-400 font-semibold">@create-skill</span>).
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={handleResetAllSkills}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#DFDAD0] dark:border-[#383532] bg-black/[0.02] dark:bg-white/[0.03] text-neutral-700 dark:text-neutral-300 text-xs font-medium hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+                title="Reset all skills to factory default settings"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset All to Defaults</span>
+              </button>
+
+              <button
+                onClick={() => setShowAddSkillModal(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90 transition-opacity shadow-2xs cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Custom Skill</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Category Filter */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+              <input
+                type="search"
+                value={skillSearchQuery}
+                onChange={(e) => setSkillSearchQuery(e.target.value)}
+                placeholder="Search skills by name, @mention, or description..."
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-black/[0.03] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] outline-hidden"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {["All", "Presentation", "Document", "Design", "Engineering", "Analysis", "Testing"].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedSkillCategory(cat)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors ${
+                    selectedSkillCategory === cat
+                      ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] border-transparent font-semibold"
+                      : "border-[#DFDAD0] dark:border-[#383532] bg-white/40 dark:bg-[#242321]/40 text-[#524E48] dark:text-[#A8A49D] hover:bg-white dark:hover:bg-[#33312E]"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Skills Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {filteredSkills.map((skill) => {
+              const isBuiltIn = BUILT_IN_SKILLS.some((b) => b.id === skill.id);
+              return (
+                <div
+                  key={skill.id}
+                  className={`p-4 rounded-2xl border transition-all ${
+                    skill.enabled
+                      ? "bg-white dark:bg-[#252321] border-[#E8E4DB] dark:border-[#383531] shadow-2xs"
+                      : "bg-black/[0.01] dark:bg-white/[0.01] border-dashed border-black/[0.08] dark:border-white/[0.08] opacity-60"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                        {skill.mentionKey}
+                      </span>
+                      <span className="text-[10px] uppercase font-semibold text-neutral-500 px-1.5 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.04]">
+                        {skill.badge}
+                      </span>
+                      <span className="text-[10px] text-neutral-400 font-medium">
+                        {skill.category}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {/* View Whole Skill Button */}
+                      <button
+                        onClick={() => setSelectedSkillToView(skill)}
+                        className="p-1.5 rounded-lg text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+                        title="View Whole Skill & Prompt Instructions"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Edit Skill Button */}
+                      <button
+                        onClick={() => setEditingSkill({ ...skill })}
+                        className="p-1.5 rounded-lg text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+                        title="Edit Skill Details & Prompt"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Delete Custom Skill Button */}
+                      {skill.id.startsWith("custom-") && (
+                        <button
+                          onClick={() => handleDeleteSkill(skill.id)}
+                          className="p-1.5 rounded-lg text-neutral-400 hover:text-red-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+                          title="Delete custom skill"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {/* Enable/Disable Toggle */}
+                      <button
+                        onClick={() => handleToggleSkill(skill.id)}
+                        className={`w-8 h-4.5 rounded-full transition-colors relative flex items-center px-0.5 cursor-pointer ml-1 ${
+                          skill.enabled ? "bg-[#3A3733] dark:bg-white" : "bg-black/[0.1] dark:bg-white/[0.1]"
+                        }`}
+                        title={skill.enabled ? "Disable skill" : "Enable skill"}
+                      >
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full transition-transform ${
+                            skill.enabled
+                              ? "translate-x-3.5 bg-white dark:bg-[#1C1B19]"
+                              : "translate-x-0 bg-white dark:bg-[#8C8880]"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  <h3 className="font-semibold text-xs text-neutral-900 dark:text-white mb-1">
+                    {skill.name}
+                  </h3>
+                  <p className="text-[11px] text-[#7A756C] dark:text-[#8C8880] leading-relaxed mb-3">
+                    {skill.description}
+                  </p>
+
+                  {skill.examplePrompt && (
+                    <div className="pt-2 border-t border-black/[0.04] dark:border-white/[0.04] text-[10px] font-mono text-neutral-500 truncate">
+                      {skill.examplePrompt}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* VIEW WHOLE SKILL MODAL */}
+          {selectedSkillToView && (
+            <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="w-full max-w-2xl bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-2xl p-6 shadow-2xl space-y-5 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-start justify-between gap-4 pb-3 border-b border-black/[0.05] dark:border-white/[0.05]">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-sm font-bold px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                        {selectedSkillToView.mentionKey}
+                      </span>
+                      <span className="text-[11px] uppercase font-bold text-neutral-500 px-2 py-0.5 rounded bg-black/[0.05] dark:bg-white/[0.05]">
+                        {selectedSkillToView.badge}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-full border border-black/[0.08] dark:border-white/[0.08] text-neutral-600 dark:text-neutral-400 font-medium">
+                        {selectedSkillToView.category}
+                      </span>
+                      <span className="text-[11px] font-mono text-neutral-400">
+                        Format: {selectedSkillToView.outputFormat}
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-base text-neutral-900 dark:text-white pt-1">
+                      {selectedSkillToView.name}
+                    </h3>
+                  </div>
+                  
+                  <button
+                    onClick={() => setSelectedSkillToView(null)}
+                    className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-black/[0.05] dark:hover:bg-white/[0.05] transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <h4 className="font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider text-[11px] mb-1.5">
+                      Description
+                    </h4>
+                    <p className="text-neutral-600 dark:text-neutral-300 leading-relaxed bg-black/[0.02] dark:bg-white/[0.02] p-3 rounded-xl border border-black/[0.04] dark:border-white/[0.04]">
+                      {selectedSkillToView.description}
+                    </p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h4 className="font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                        <Terminal className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Whole System Prompt Modifier</span>
+                      </h4>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedSkillToView.systemPromptModifier);
+                          toast.success("System Prompt Modifier copied to clipboard");
+                        }}
+                        className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 hover:underline cursor-pointer font-medium"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>Copy Modifier</span>
+                      </button>
+                    </div>
+                    <pre className="p-3.5 rounded-xl bg-[#1C1B19] text-neutral-200 dark:bg-[#181716] font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-56 overflow-y-auto border border-white/[0.08]">
+                      {selectedSkillToView.systemPromptModifier || "(No modifier specified)"}
+                    </pre>
+                  </div>
+
+                  {selectedSkillToView.examplePrompt && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <h4 className="font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider text-[11px]">
+                          Example Prompt
+                        </h4>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedSkillToView.examplePrompt);
+                            toast.success("Example prompt copied");
+                          }}
+                          className="flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>Copy</span>
+                        </button>
+                      </div>
+                      <div className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.04] dark:border-white/[0.04] font-mono text-[11px] text-neutral-700 dark:text-neutral-300">
+                        {selectedSkillToView.examplePrompt}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-3 border-t border-black/[0.05] dark:border-white/[0.05]">
+                  <div className="flex items-center gap-2">
+                    {BUILT_IN_SKILLS.some((b) => b.id === selectedSkillToView.id) && (
+                      <button
+                        onClick={() => handleResetSingleSkill(selectedSkillToView.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#DFDAD0] dark:border-[#383532] text-neutral-700 dark:text-neutral-300 text-xs font-medium hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reset to Factory Default</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const target = selectedSkillToView;
+                        setSelectedSkillToView(null);
+                        setEditingSkill({ ...target });
+                      }}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Edit Skill</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedSkillToView(null)}
+                      className="px-3.5 py-1.5 rounded-xl border border-[#DFDAD0] dark:border-[#383532] text-xs font-medium hover:bg-black/[0.04] dark:hover:bg-white/[0.04] cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* EDIT SKILL MODAL */}
+          {editingSkill && (
+            <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="w-full max-w-lg bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-2xl p-6 shadow-2xl space-y-4 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between pb-2 border-b border-black/[0.05] dark:border-white/[0.05]">
+                  <div className="flex items-center gap-2">
+                    <Pencil className="w-4 h-4 text-amber-500" />
+                    <h3 className="font-bold text-sm text-neutral-900 dark:text-white">
+                      Edit Skill: {editingSkill.name}
+                    </h3>
+                  </div>
+                  <button onClick={() => setEditingSkill(null)} className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-3.5 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-medium block mb-1">Skill Name</label>
+                      <input
+                        type="text"
+                        value={editingSkill.name}
+                        onChange={(e) => setEditingSkill({ ...editingSkill, name: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden text-neutral-900 dark:text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-medium block mb-1">@mention Shortcut</label>
+                      <input
+                        type="text"
+                        value={editingSkill.mentionKey}
+                        onChange={(e) => setEditingSkill({ ...editingSkill, mentionKey: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden font-mono text-neutral-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="font-medium block mb-1">Category</label>
+                      <select
+                        value={editingSkill.category}
+                        onChange={(e) => setEditingSkill({ ...editingSkill, category: e.target.value as any })}
+                        className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden text-neutral-900 dark:text-white"
+                      >
+                        <option value="Document">Document</option>
+                        <option value="Presentation">Presentation</option>
+                        <option value="Design">Design</option>
+                        <option value="Engineering">Engineering</option>
+                        <option value="Analysis">Analysis</option>
+                        <option value="Testing">Testing</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-medium block mb-1">Badge Tag</label>
+                      <input
+                        type="text"
+                        value={editingSkill.badge}
+                        onChange={(e) => setEditingSkill({ ...editingSkill, badge: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden text-neutral-900 dark:text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-medium block mb-1">Output Format</label>
+                      <select
+                        value={editingSkill.outputFormat}
+                        onChange={(e) => setEditingSkill({ ...editingSkill, outputFormat: e.target.value as any })}
+                        className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden text-neutral-900 dark:text-white"
+                      >
+                        <option value="markdown">Markdown</option>
+                        <option value="slides">Slides (PPT/HTML)</option>
+                        <option value="pdf">PDF Whitepaper</option>
+                        <option value="docx">Word (.docx)</option>
+                        <option value="svg">SVG / Canvas</option>
+                        <option value="code">Source Code</option>
+                        <option value="csv">CSV Spreadsheet</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={editingSkill.description}
+                      onChange={(e) => setEditingSkill({ ...editingSkill, description: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden text-neutral-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">System Prompt Modifier (LLM Directive)</label>
+                    <textarea
+                      value={editingSkill.systemPromptModifier}
+                      onChange={(e) => setEditingSkill({ ...editingSkill, systemPromptModifier: e.target.value })}
+                      rows={5}
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden leading-relaxed font-mono text-[11px] text-neutral-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">Example Prompt</label>
+                    <input
+                      type="text"
+                      value={editingSkill.examplePrompt}
+                      onChange={(e) => setEditingSkill({ ...editingSkill, examplePrompt: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden text-neutral-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-3 border-t border-black/[0.05] dark:border-white/[0.05]">
+                  {BUILT_IN_SKILLS.some((b) => b.id === editingSkill.id) ? (
+                    <button
+                      type="button"
+                      onClick={() => handleResetSingleSkill(editingSkill.id)}
+                      className="flex items-center gap-1 text-[11px] text-neutral-500 hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset this skill</span>
+                    </button>
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingSkill(null)}
+                      className="px-3.5 py-1.5 rounded-xl border border-[#DFDAD0] dark:border-[#383532] text-xs font-medium hover:bg-black/[0.04] dark:hover:bg-white/[0.04] cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveEditSkill}
+                      className="px-4 py-1.5 rounded-xl bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90 cursor-pointer shadow-xs"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Add Custom Skill Modal */}
+          {showAddSkillModal && (
+            <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="w-full max-w-md bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-2xl p-5 shadow-2xl space-y-4 animate-in zoom-in-95">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm text-neutral-900 dark:text-white">Add Custom AI Skill</h3>
+                  <button onClick={() => setShowAddSkillModal(false)} className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer">
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-medium block mb-1">Skill Name</label>
+                    <input
+                      type="text"
+                      value={newSkillName}
+                      onChange={(e) => setNewSkillName(e.target.value)}
+                      placeholder="e.g. Executive Summary Builder"
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">@mention Shortcut</label>
+                    <input
+                      type="text"
+                      value={newSkillMention}
+                      onChange={(e) => setNewSkillMention(e.target.value)}
+                      placeholder="e.g. @summary"
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">Category</label>
+                    <select
+                      value={newSkillCategory}
+                      onChange={(e) => setNewSkillCategory(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden"
+                    >
+                      <option value="Document">Document</option>
+                      <option value="Presentation">Presentation</option>
+                      <option value="Design">Design</option>
+                      <option value="Engineering">Engineering</option>
+                      <option value="Analysis">Analysis</option>
+                      <option value="Testing">Testing</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={newSkillDescription}
+                      onChange={(e) => setNewSkillDescription(e.target.value)}
+                      placeholder="e.g. Formats output as an executive briefing"
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">System Prompt Modifier</label>
+                    <textarea
+                      value={newSkillPromptModifier}
+                      onChange={(e) => setNewSkillPromptModifier(e.target.value)}
+                      placeholder="Instructions passed to the LLM when this skill is invoked..."
+                      rows={3}
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden leading-relaxed"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-black/[0.04] dark:border-white/[0.04]">
+                  <button
+                    onClick={() => setShowAddSkillModal(false)}
+                    className="px-3 py-1.5 rounded-xl border border-[#DFDAD0] dark:border-[#383532] text-xs font-medium hover:bg-black/[0.04] dark:hover:bg-white/[0.04] cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddCustomSkill}
+                    className="px-4 py-1.5 rounded-xl bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90 cursor-pointer shadow-xs"
+                  >
+                    Save Skill
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: RULES & DIRECTIVES */}
+      {activeTab === "rules" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="space-y-1">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#8C877D] dark:text-[#6E6A63]">
+                AI System Directives & Rules ({rules.filter((r) => r.enabled).length} Enabled)
+              </h2>
+              <p className="text-xs text-[#7A756C] dark:text-[#8C8880]">
+                Universal behavioral constraints, coding standards, and algorithmic invariants automatically injected into all generations.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowAddRuleModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90 transition-opacity shadow-2xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Custom Rule</span>
+            </button>
+          </div>
+
+          {/* Search & Category Filter */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+              <input
+                type="search"
+                value={ruleSearchQuery}
+                onChange={(e) => setRuleSearchQuery(e.target.value)}
+                placeholder="Search rules and system directives..."
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-black/[0.03] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] outline-hidden"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {["All", "Coding", "Complexity", "Documentation", "Design"].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedRuleCategory(cat)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors ${
+                    selectedRuleCategory === cat
+                      ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] border-transparent font-semibold"
+                      : "border-[#DFDAD0] dark:border-[#383532] bg-white/40 dark:bg-[#242321]/40 text-[#524E48] dark:text-[#A8A49D] hover:bg-white dark:hover:bg-[#33312E]"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Rules List */}
+          <div className="space-y-3">
+            {filteredRules.map((rule) => (
+              <div
+                key={rule.id}
+                className={`p-4 rounded-2xl border transition-all ${
+                  rule.enabled
+                    ? "bg-white dark:bg-[#252321] border-[#E8E4DB] dark:border-[#383531] shadow-2xs"
+                    : "bg-black/[0.01] dark:bg-white/[0.01] border-dashed border-black/[0.08] dark:border-white/[0.08] opacity-60"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-semibold text-neutral-600 dark:text-neutral-300 px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.04] dark:border-white/[0.04]">
+                      {rule.category}
+                    </span>
+                    <h3 className="font-semibold text-xs text-neutral-900 dark:text-white">
+                      {rule.title}
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {!rule.isBuiltIn && (
+                      <button
+                        onClick={() => handleDeleteRule(rule.id)}
+                        className="p-1 rounded text-neutral-400 hover:text-red-500 transition-colors"
+                        title="Delete rule"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleToggleRule(rule.id)}
+                      className={`w-8 h-4.5 rounded-full transition-colors relative flex items-center px-0.5 cursor-pointer ${
+                        rule.enabled ? "bg-[#3A3733] dark:bg-white" : "bg-black/[0.1] dark:bg-white/[0.1]"
+                      }`}
+                    >
+                      <div
+                        className={`w-3.5 h-3.5 rounded-full transition-transform ${
+                          rule.enabled
+                            ? "translate-x-3.5 bg-white dark:bg-[#1C1B19]"
+                            : "translate-x-0 bg-white dark:bg-[#8C8880]"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-[#7A756C] dark:text-[#8C8880] mb-2 leading-relaxed">
+                  {rule.description}
+                </p>
+
+                <div className="p-2.5 rounded-xl bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.04] dark:border-white/[0.04] font-mono text-[11px] text-neutral-800 dark:text-neutral-200 leading-relaxed">
+                  {rule.ruleText}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Add Custom Rule Modal */}
+          {showAddRuleModal && (
+            <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="w-full max-w-md bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-2xl p-5 shadow-2xl space-y-4 animate-in zoom-in-95">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm text-neutral-900 dark:text-white">Add System Rule Directive</h3>
+                  <button onClick={() => setShowAddRuleModal(false)} className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white">
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-medium block mb-1">Rule Title</label>
+                    <input
+                      type="text"
+                      value={newRuleTitle}
+                      onChange={(e) => setNewRuleTitle(e.target.value)}
+                      placeholder="e.g. Always Use Type Guards"
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">Category</label>
+                    <select
+                      value={newRuleCategory}
+                      onChange={(e) => setNewRuleCategory(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden"
+                    >
+                      <option value="Coding">Coding</option>
+                      <option value="Complexity">Complexity</option>
+                      <option value="Documentation">Documentation</option>
+                      <option value="Design">Design</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">Short Description</label>
+                    <input
+                      type="text"
+                      value={newRuleDescription}
+                      onChange={(e) => setNewRuleDescription(e.target.value)}
+                      placeholder="e.g. Enforce runtime type validation in helper functions"
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-medium block mb-1">Directive Prompt Text</label>
+                    <textarea
+                      value={newRuleText}
+                      onChange={(e) => setNewRuleText(e.target.value)}
+                      placeholder="System instruction that will be enforced for all generations..."
+                      rows={3}
+                      className="w-full px-3 py-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.04] border border-[#DFDAD0] dark:border-[#383532] outline-hidden leading-relaxed"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-black/[0.04] dark:border-white/[0.04]">
+                  <button
+                    onClick={() => setShowAddRuleModal(false)}
+                    className="px-3 py-1.5 rounded-xl border border-[#DFDAD0] dark:border-[#383532] text-xs font-medium hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddCustomRule}
+                    className="px-4 py-1.5 rounded-xl bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90"
+                  >
+                    Save Rule
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

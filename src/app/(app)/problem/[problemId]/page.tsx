@@ -27,6 +27,7 @@ import ProblemPageSoluction from '@/components/ProblemPageSoluction';
 import ProblemPageSubmission from '@/components/ProblemPageSubmission';
 import ProblemPageTestResult from '@/components/ProblemPageTestResult';
 import ProblemPageAiTab from '@/components/ProblemPageAiTab';
+import { WorkspaceLayoutType } from '@/components/ProblemPageLayoutsModal';
 import confetti from "canvas-confetti";
 import { GeneratedProblem } from '@/types/generatedProblem';
 import GammaProblemCanvas from '@/components/problem-builder/GammaProblemCanvas';
@@ -83,6 +84,32 @@ export default function ProblemPage() {
 
   // Ask AI Dynamic Tab State
   const [isAskAiOpen, setIsAskAiOpen] = useState<boolean>(false);
+
+  // Note Tab & Layout State
+  const [isNoteOpen, setIsNoteOpen] = useState<boolean>(false);
+  const [activeEditorTab, setActiveEditorTab] = useState<'code' | 'note'>('code');
+  const [currentLayout, setCurrentLayout] = useState<WorkspaceLayoutType>('default');
+  const [layoutKey, setLayoutKey] = useState<number>(0);
+  const [panelSizes, setPanelSizes] = useState<{ left: number; right: number }>({ left: 50, right: 50 });
+
+  const handleSelectLayout = (layout: WorkspaceLayoutType) => {
+    setCurrentLayout(layout);
+    if (layout === 'leet') {
+      setPanelSizes({ left: 35, right: 65 });
+    } else if (layout === 'note-taking') {
+      setIsNoteOpen(true);
+      setActiveEditorTab('note');
+      setPanelSizes({ left: 40, right: 60 });
+    } else if (layout === 'debug') {
+      setConsoleTab('testresult');
+      setPanelSizes({ left: 40, right: 60 });
+    } else if (layout === 'focus') {
+      setPanelSizes({ left: 15, right: 85 });
+    } else {
+      setPanelSizes({ left: 50, right: 50 });
+    }
+    setLayoutKey((prev) => prev + 1);
+  };
 
   // Live Problem Generator State (triggered from Dashboard Chat)
   const [isLiveGenerating, setIsLiveGenerating] = useState<boolean>(false);
@@ -355,15 +382,21 @@ export default function ProblemPage() {
         onRunCode={handleCodeRun}
         onSubmitCode={handleCodeSubmission}
         onOpenAi={handleOpenAskAi}
+        onOpenNote={() => {
+          setIsNoteOpen(true);
+          setActiveEditorTab('note');
+        }}
+        currentLayout={currentLayout}
+        onSelectLayout={handleSelectLayout}
       />
 
       {/* Main Workspace with Horizontal & Vertical Resizable Panels */}
       <div className="flex-1 w-full px-2.5 pb-2.5 pt-0 overflow-hidden">
-        <ResizablePanelGroup direction="horizontal" className="w-full h-full">
+        <ResizablePanelGroup key={layoutKey} direction="horizontal" className="w-full h-full">
           {/* Left Panel: Description & Community Tabs */}
           <ResizablePanel
-            defaultSize={50}
-            minSize={30}
+            defaultSize={panelSizes.left}
+            minSize={20}
             className="rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] flex flex-col shadow-sm"
           >
             {/* Left Top Tabs */}
@@ -423,6 +456,10 @@ export default function ProblemPage() {
                   theme={theme}
                   problemInfo={problemInfo}
                   onSwitchTab={setCurrentTab}
+                  onApplyCode={(code) => {
+                    setSourceCode(code);
+                    toast.success("Applied code to Monaco Editor!");
+                  }}
                 />
               )}
 
@@ -443,7 +480,7 @@ export default function ProblemPage() {
           <ResizableHandle />
 
           {/* Right Panel: Split Vertically (Top: Editor, Bottom: Testcase/Test Result Console) */}
-          <ResizablePanel defaultSize={50} minSize={30} className="overflow-hidden">
+          <ResizablePanel defaultSize={panelSizes.right} minSize={20} className="overflow-hidden">
             <ResizablePanelGroup direction="vertical" className="w-full h-full">
               {/* Top: Code Editor */}
               <ResizablePanel
@@ -458,6 +495,14 @@ export default function ProblemPage() {
                   setSelectedLanguageCode={setSelectedLanguageCode}
                   sourceCode={sourceCode}
                   setSourceCode={setSourceCode}
+                  problemId={problemId}
+                  isNoteOpen={isNoteOpen}
+                  activeEditorTab={activeEditorTab}
+                  setActiveEditorTab={setActiveEditorTab}
+                  onCloseNote={() => {
+                    setIsNoteOpen(false);
+                    setActiveEditorTab('code');
+                  }}
                 />
               </ResizablePanel>
 

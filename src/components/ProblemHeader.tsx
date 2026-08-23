@@ -12,11 +12,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import ProblemPageLayoutsModal, { WorkspaceLayoutType } from './ProblemPageLayoutsModal';
 
 /* ─── Exact LeetCode FontAwesome / custom SVG icons extracted via DevTools ─── */
 
@@ -109,6 +106,9 @@ interface ProblemHeaderProps {
   onRunCode: () => void;
   onSubmitCode: () => void;
   onOpenAi: () => void;
+  onOpenNote?: () => void;
+  currentLayout?: WorkspaceLayoutType;
+  onSelectLayout?: (layout: WorkspaceLayoutType) => void;
 }
 
 export default function ProblemHeader({
@@ -119,6 +119,9 @@ export default function ProblemHeader({
   onRunCode,
   onSubmitCode,
   onOpenAi,
+  onOpenNote,
+  currentLayout = 'default',
+  onSelectLayout,
 }: ProblemHeaderProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -134,8 +137,6 @@ export default function ProblemHeader({
       interval = setInterval(() => {
         setSeconds((prev) => prev + 1);
       }, 1000);
-    } else if (!isTimerRunning && seconds !== 0) {
-      clearInterval(interval);
     }
     return () => clearInterval(interval);
   }, [isTimerRunning]);
@@ -296,28 +297,29 @@ export default function ProblemHeader({
           </Tooltip>
         </div>
 
-        {/* Box 2: Note / Scratchpad Box */}
-        <div className="flex h-8 items-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
+        {/* 4. Note Square */}
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                className="flex items-center justify-center p-[7px] text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
-                title="Note"
+                onClick={onOpenNote}
+                className="w-full h-full flex items-center justify-center text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
+                title="Notes / Scratchpad"
               >
                 <IconNoteSticky />
               </button>
             </TooltipTrigger>
-            <TooltipContent>Note</TooltipContent>
+            <TooltipContent>Notes / Scratchpad</TooltipContent>
           </Tooltip>
         </div>
 
-        {/* Box 3: AI Sparkle Box */}
-        <div className="flex h-8 items-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
+        {/* 5. AI Sparkle Square */}
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={onOpenAi}
-                className="flex items-center justify-center p-[7px] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
+                className="w-full h-full flex items-center justify-center hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
                 title="Ask AI"
               >
                 <IconSparkleGradient />
@@ -328,12 +330,21 @@ export default function ProblemHeader({
         </div>
       </div>
 
-      {/* ═══ Right section: Layouts + Settings + Timer + Auth + Premium ═══ */}
+      {/* ═══ Right section: Layouts + Settings + Timer + Auth ═══ */}
       <div className="relative flex flex-1 items-center justify-end">
-        {/* Layouts */}
-        <NavIconBtn title="Layouts">
-          <IconObjectsColumn />
-        </NavIconBtn>
+        {/* Layouts Modal (Matching Image 1) */}
+        <ProblemPageLayoutsModal
+          currentLayout={currentLayout}
+          onSelectLayout={(layout) => onSelectLayout?.(layout)}
+        >
+          <button
+            className="relative flex items-center justify-center p-[9px] rounded-none cursor-pointer text-[rgb(119,119,119)] dark:text-[rgb(153,153,153)] hover:text-[rgb(26,26,26)] dark:hover:text-white transition-colors"
+            style={{ height: '32px' }}
+            title="Layouts"
+          >
+            <IconObjectsColumn />
+          </button>
+        </ProblemPageLayoutsModal>
 
         {/* Settings */}
         <DropdownMenu>
@@ -417,15 +428,6 @@ export default function ProblemHeader({
             <Link href="/sign-in" className="hover:text-neutral-900 dark:hover:text-white transition-colors">Log in</Link>
           </div>
         )}
-
-        {/* Premium Badge */}
-        <Link
-          href="/store"
-          className="hidden sm:flex items-center ml-2 px-2.5 py-0.5 rounded-full text-amber-600 dark:text-amber-400 font-semibold text-[11px] transition-colors"
-          style={{ backgroundColor: 'rgba(255, 175, 56, 0.15)', border: '1px solid rgba(255, 175, 56, 0.3)' }}
-        >
-          Premium
-        </Link>
       </div>
     </header>
   );

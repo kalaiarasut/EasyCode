@@ -14,6 +14,18 @@ import {
   ChevronLeft,
   Check,
   Info,
+  FileText,
+  X,
+  Heading,
+  Bold,
+  Italic,
+  Strikethrough,
+  List,
+  ListOrdered,
+  Quote,
+  Code,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -35,6 +47,11 @@ interface ProblemPageCodeEditorProps {
   setSelectedLanguageCode: React.Dispatch<React.SetStateAction<number>>;
   sourceCode: string;
   setSourceCode: React.Dispatch<React.SetStateAction<string>>;
+  problemId?: string;
+  isNoteOpen?: boolean;
+  activeEditorTab?: 'code' | 'note';
+  setActiveEditorTab?: (tab: 'code' | 'note') => void;
+  onCloseNote?: () => void;
 }
 
 export const codingLanguages = {
@@ -236,10 +253,57 @@ export default function ProblemPageCodeEditor({
   setSelectedLanguageCode,
   sourceCode,
   setSourceCode,
+  problemId = "default_problem",
+  isNoteOpen = false,
+  activeEditorTab = 'code',
+  setActiveEditorTab,
+  onCloseNote,
 }: ProblemPageCodeEditorProps) {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [cursorPos, setCursorPos] = useState({ line: 1, column: 1 });
   const editorRef = useRef<any>(null);
+
+  // Note Tab State
+  const [noteContent, setNoteContent] = useState<string>("");
+  const [isNotePreview, setIsNotePreview] = useState<boolean>(false);
+  const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load saved note
+  useEffect(() => {
+    if (!problemId) return;
+    try {
+      const saved = localStorage.getItem(`easycode_note_${problemId}`);
+      if (saved !== null) {
+        setNoteContent(saved);
+      }
+    } catch (e) {}
+  }, [problemId]);
+
+  const handleNoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setNoteContent(val);
+    try {
+      localStorage.setItem(`easycode_note_${problemId}`, val);
+    } catch (e) {}
+  };
+
+  const insertNoteFormat = (prefix: string, suffix: string = "") => {
+    const textarea = noteTextareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = noteContent.substring(start, end);
+    const replacement = `${prefix}${selected || "text"}${suffix}`;
+    const next = noteContent.substring(0, start) + replacement + noteContent.substring(end);
+    setNoteContent(next);
+    try {
+      localStorage.setItem(`easycode_note_${problemId}`, next);
+    } catch (e) {}
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + prefix.length, start + prefix.length + (selected.length || 4));
+    }, 0);
+  };
 
   useEffect(() => {
     const langConfig = codingLanguages[selectedLanguage as LanguageName] || codingLanguages["Java"] || codingLanguages["C++"];
@@ -362,7 +426,7 @@ export default function ProblemPageCodeEditor({
 
   return (
     <div className="w-full h-full flex flex-col bg-white dark:bg-[#1a1a1a] overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', fontSize: '14px', color: 'rgb(38, 38, 38)' }}>
-      {/* Tab bar - same style as LeetCode flexlayout: 36px, rgba(0,0,0,0.02) bg */}
+      {/* Tab bar - LeetCode style: Code tab + Optional Note tab */}
       <div
         className="w-full flex items-center justify-between px-1.5 shrink-0 group"
         style={{
@@ -371,23 +435,55 @@ export default function ProblemPageCodeEditor({
           borderRadius: '8px 8px 0 0',
         }}
       >
-        <button
-          className="relative flex items-center gap-1.5 cursor-default"
-          style={{
-            padding: '4px 8px',
-            borderRadius: '5px',
-            height: '28px',
-            fontWeight: 500,
-            color: 'rgb(26, 26, 26)',
-            fontSize: '14px',
-            lineHeight: '21px',
-            backgroundColor: 'transparent',
-            border: 'none',
-          }}
-        >
-          <Code2 style={{ width: '14px', height: '14px', opacity: 0.7 }} />
-          <span>Code</span>
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Code Tab */}
+          <button
+            onClick={() => setActiveEditorTab?.('code')}
+            className={`relative flex items-center gap-1.5 cursor-pointer transition-colors ${
+              activeEditorTab === 'code'
+                ? 'text-neutral-900 dark:text-white font-medium'
+                : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+            }`}
+            style={{
+              padding: '4px 8px',
+              borderRadius: '5px',
+              height: '28px',
+              fontSize: '14px',
+              lineHeight: '21px',
+              backgroundColor: 'transparent',
+              border: 'none',
+            }}
+          >
+            <Code2 style={{ width: '14px', height: '14px', opacity: activeEditorTab === 'code' ? 0.9 : 0.6 }} />
+            <span>Code</span>
+          </button>
+
+          {/* Note Tab (Matching Image 3) */}
+          {isNoteOpen && (
+            <div
+              onClick={() => setActiveEditorTab?.('note')}
+              className={`relative flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 transition-colors ${
+                activeEditorTab === 'note'
+                  ? 'bg-neutral-200/70 dark:bg-neutral-800 text-neutral-900 dark:text-white font-medium'
+                  : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800/60'
+              }`}
+              style={{ height: '28px', fontSize: '14px' }}
+            >
+              <FileText style={{ width: '13px', height: '13px', color: '#eab308' }} />
+              <span>Note</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCloseNote?.();
+                }}
+                className="ml-1 p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-neutral-400 hover:text-rose-500 transition-colors"
+                title="Close note"
+              >
+                <X style={{ width: '11px', height: '11px' }} />
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Right: Maximize & Fold/Collapse Options on Hover */}
         <div className="flex items-center gap-1 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity pr-1">
@@ -410,133 +506,267 @@ export default function ProblemPageCodeEditor({
         </div>
       </div>
 
-      {/* Toolbar row: Language selector + Auto | right-side icons - 36px height */}
-      <div
-        className="w-full flex items-center justify-between shrink-0 select-none"
-        style={{
-          height: '36px',
-          padding: '0 4px',
-          backgroundColor: 'transparent',
-        }}
-      >
-        {/* Left: Language selector + Auto */}
-        <div className="flex items-center gap-1.5">
-          {/* 3-Column Language Selector Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="flex items-center gap-1 cursor-pointer outline-none"
-              style={{
-                padding: '4px 8px',
-                borderRadius: '5px',
-                fontSize: '14px',
-                fontWeight: 400,
-                color: 'rgb(38, 38, 38)',
-                background: 'transparent',
-                border: 'none',
-              }}
+      {activeEditorTab === 'note' ? (
+        /* Note Editor View - 100% Matching Reference Image 3 */
+        <div className="flex-1 w-full flex flex-col bg-white dark:bg-[#1a1a1a] overflow-hidden select-none">
+          {/* Note Formatting Toolbar */}
+          <div
+            className="w-full flex items-center gap-1.5 px-3 py-1 border-b border-black/[0.06] dark:border-white/[0.06] bg-transparent text-neutral-600 dark:text-neutral-400 text-xs shrink-0"
+            style={{ height: '36px' }}
+          >
+            {/* H (Heading) */}
+            <button
+              onClick={() => insertNoteFormat("### ")}
+              className="px-2 py-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 font-bold cursor-pointer text-xs transition-colors"
+              title="Heading"
             >
-              <span>{selectedLanguage}</span>
-              <ChevronDown style={{ width: '12px', height: '12px', opacity: 0.5 }} />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="p-3 bg-white dark:bg-[#1e1e1e] border border-neutral-200 dark:border-neutral-700 shadow-xl rounded-xl">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1 min-w-[340px] sm:min-w-[480px]">
-                <div className="space-y-0.5 border-r border-neutral-100 dark:border-neutral-800 pr-2">
-                  {column1Languages.map(renderLangItem)}
-                </div>
-                <div className="space-y-0.5 border-r border-neutral-100 dark:border-neutral-800 pr-2">
-                  {column2Languages.map(renderLangItem)}
-                </div>
-                <div className="space-y-0.5">
-                  {column3Languages.map(renderLangItem)}
-                </div>
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              H
+            </button>
 
-          {/* Auto Lock Badge */}
-          <div className="flex items-center gap-1" style={{ fontSize: '14px', color: 'rgba(0,0,0,0.55)' }}>
-            <Lock style={{ width: '12px', height: '12px' }} />
-            <span>Auto</span>
+            {/* B (Bold) */}
+            <button
+              onClick={() => insertNoteFormat("**", "**")}
+              className="px-2 py-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 font-bold cursor-pointer text-xs transition-colors"
+              title="Bold"
+            >
+              B
+            </button>
+
+            {/* I (Italic) */}
+            <button
+              onClick={() => insertNoteFormat("*", "*")}
+              className="px-2 py-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 italic cursor-pointer text-xs transition-colors"
+              title="Italic"
+            >
+              I
+            </button>
+
+            {/* S (Strikethrough) */}
+            <button
+              onClick={() => insertNoteFormat("~~", "~~")}
+              className="px-2 py-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 line-through cursor-pointer text-xs transition-colors"
+              title="Strikethrough"
+            >
+              S
+            </button>
+
+            {/* Bullet List */}
+            <button
+              onClick={() => insertNoteFormat("- ")}
+              className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
+              title="Bullet List"
+            >
+              <List className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Numbered List */}
+            <button
+              onClick={() => insertNoteFormat("1. ")}
+              className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
+              title="Numbered List"
+            >
+              <ListOrdered className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Quote */}
+            <button
+              onClick={() => insertNoteFormat("> ")}
+              className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
+              title="Quote"
+            >
+              <Quote className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Code */}
+            <button
+              onClick={() => insertNoteFormat("```\n", "\n```")}
+              className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
+              title="Code block"
+            >
+              <Code className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Divider */}
+            <div className="w-[1px] h-4 bg-black/10 dark:bg-white/10 mx-1" />
+
+            {/* Preview Toggle */}
+            <button
+              onClick={() => setIsNotePreview(!isNotePreview)}
+              className={`p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors ${
+                isNotePreview ? 'text-blue-500 font-semibold' : ''
+              }`}
+              title="Toggle Markdown Preview"
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Note Area */}
+          <div className="flex-1 w-full p-4 overflow-y-auto select-text">
+            {!isNotePreview ? (
+              <textarea
+                ref={noteTextareaRef}
+                value={noteContent}
+                onChange={handleNoteChange}
+                placeholder="Type here... (Markdown is supported)"
+                className="w-full h-full resize-none bg-transparent outline-none font-mono text-[13px] leading-relaxed text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500"
+              />
+            ) : (
+              <div className="text-xs leading-relaxed whitespace-pre-wrap font-sans text-neutral-700 dark:text-neutral-300">
+                {noteContent || (
+                  <span className="text-neutral-400 italic">No notes written yet. Type your solution thoughts above.</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Note Footer */}
+          <div
+            className="w-full flex items-center justify-between select-none shrink-0"
+            style={{
+              height: '32px',
+              padding: '4px 12px',
+              color: 'rgb(115, 115, 115)',
+              fontSize: '12px',
+              borderTop: '1px solid rgba(0,0,0,0.08)',
+            }}
+          >
+            <span>Saved</span>
+            <span>{noteContent.length} characters</span>
           </div>
         </div>
-
-        {/* Right: Actions - exact LeetCode toolbar: padding 0 4px, gap 4px */}
-        <div className="flex items-center" style={{ padding: '0 4px', gap: '4px' }}>
-          {[
-            { icon: Braces, label: 'Format', action: handleFormatCode },
-            { icon: Bookmark, label: 'Bookmark', action: () => toast.info("Bookmark added") },
-            { icon: Copy, label: 'Copy', action: handleCopyToClipboard },
-            { icon: RotateCcw, label: 'Reset', action: handleResetCode },
-            { icon: isFullScreen ? Minimize2 : Maximize2, label: isFullScreen ? 'Exit Fullscreen' : 'Fullscreen', action: () => {
-              if (!document.fullscreenElement) { document.documentElement.requestFullscreen?.(); setIsFullScreen(true); }
-              else { document.exitFullscreen?.(); setIsFullScreen(false); }
-            }},
-          ].map((item, idx) => (
-            <Tooltip key={idx}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={item.action}
-                  className="cursor-pointer"
+      ) : (
+        /* Standard Monaco Code Editor & Toolbar */
+        <>
+          {/* Toolbar row: Language selector + Auto | right-side icons - 36px height */}
+          <div
+            className="w-full flex items-center justify-between shrink-0 select-none"
+            style={{
+              height: '36px',
+              padding: '0 4px',
+              backgroundColor: 'transparent',
+            }}
+          >
+            {/* Left: Language selector + Auto */}
+            <div className="flex items-center gap-1.5">
+              {/* 3-Column Language Selector Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className="flex items-center gap-1 cursor-pointer outline-none"
                   style={{
-                    padding: '4px',
+                    padding: '4px 8px',
                     borderRadius: '5px',
-                    color: 'rgba(0,0,0,0.4)',
+                    fontSize: '14px',
+                    fontWeight: 400,
+                    color: 'rgb(38, 38, 38)',
                     background: 'transparent',
                     border: 'none',
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.04)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
                 >
-                  <item.icon style={{ width: '14px', height: '14px' }} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{item.label}</TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-      </div>
+                  <span>{selectedLanguage}</span>
+                  <ChevronDown style={{ width: '12px', height: '12px', opacity: 0.5 }} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="p-3 bg-white dark:bg-[#1e1e1e] border border-neutral-200 dark:border-neutral-700 shadow-xl rounded-xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1 min-w-[340px] sm:min-w-[480px]">
+                    <div className="space-y-0.5 border-r border-neutral-100 dark:border-neutral-800 pr-2">
+                      {column1Languages.map(renderLangItem)}
+                    </div>
+                    <div className="space-y-0.5 border-r border-neutral-100 dark:border-neutral-800 pr-2">
+                      {column2Languages.map(renderLangItem)}
+                    </div>
+                    <div className="space-y-0.5">
+                      {column3Languages.map(renderLangItem)}
+                    </div>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-      {/* Monaco Code Editor */}
-      <div className="flex-1 w-full relative min-h-0">
-        <Editor
-          height="100%"
-          language={currentLangConfig.compilerId}
-          value={sourceCode}
-          onChange={(value) => setSourceCode(value ?? "")}
-          theme={theme === 'dark' ? 'leetcode-dark' : 'leetcode-light'}
-          onMount={handleEditorMount}
-          options={{
-            automaticLayout: true,
-            minimap: { enabled: false },
-            fontSize: 13,
-            lineHeight: 18,
-            fontFamily: 'Consolas, "Courier New", monospace',
-            tabSize: 4,
-            scrollBeyondLastLine: false,
-            folding: true,
-            glyphMargin: false,
-            fixedOverflowWidgets: true,
-            padding: { top: 6, bottom: 6 },
-          }}
-        />
-      </div>
+              {/* Auto Lock Badge */}
+              <div className="flex items-center gap-1" style={{ fontSize: '14px', color: 'rgba(0,0,0,0.55)' }}>
+                <Lock style={{ width: '12px', height: '12px' }} />
+                <span>Auto</span>
+              </div>
+            </div>
 
-      {/* Editor Status Footer Bar - exact LeetCode: h-8 (32px), color rgb(115,115,115), padding 4px */}
-      <div
-        className="w-full flex items-center justify-between select-none shrink-0"
-        style={{
-          height: '32px',
-          padding: '4px 12px',
-          color: 'rgb(115, 115, 115)',
-          fontSize: '12px',
-          borderTop: '1px solid rgba(0,0,0,0.08)',
-        }}
-      >
-        <span>Saved</span>
-        <span>
-          Ln {cursorPos.line}, Col {cursorPos.column}
-        </span>
-      </div>
+            {/* Right: Actions - exact LeetCode toolbar: padding 0 4px, gap 4px */}
+            <div className="flex items-center" style={{ padding: '0 4px', gap: '4px' }}>
+              {[
+                { icon: Braces, label: 'Format', action: handleFormatCode },
+                { icon: Bookmark, label: 'Bookmark', action: () => toast.info("Bookmark added") },
+                { icon: Copy, label: 'Copy', action: handleCopyToClipboard },
+                { icon: RotateCcw, label: 'Reset', action: handleResetCode },
+                { icon: isFullScreen ? Minimize2 : Maximize2, label: isFullScreen ? 'Exit Fullscreen' : 'Fullscreen', action: () => {
+                  if (!document.fullscreenElement) { document.documentElement.requestFullscreen?.(); setIsFullScreen(true); }
+                  else { document.exitFullscreen?.(); setIsFullScreen(false); }
+                }},
+              ].map((item, idx) => (
+                <Tooltip key={idx}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={item.action}
+                      className="cursor-pointer"
+                      style={{
+                        padding: '4px',
+                        borderRadius: '5px',
+                        color: 'rgba(0,0,0,0.4)',
+                        background: 'transparent',
+                        border: 'none',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.04)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                      <item.icon style={{ width: '14px', height: '14px' }} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{item.label}</TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </div>
+
+          {/* Monaco Code Editor */}
+          <div className="flex-1 w-full relative min-h-0">
+            <Editor
+              height="100%"
+              language={currentLangConfig.compilerId}
+              value={sourceCode}
+              onChange={(value) => setSourceCode(value ?? "")}
+              theme={theme === 'dark' ? 'leetcode-dark' : 'leetcode-light'}
+              onMount={handleEditorMount}
+              options={{
+                automaticLayout: true,
+                minimap: { enabled: false },
+                fontSize: 13,
+                lineHeight: 18,
+                fontFamily: 'Consolas, "Courier New", monospace',
+                tabSize: 4,
+                scrollBeyondLastLine: false,
+                folding: true,
+                glyphMargin: false,
+                fixedOverflowWidgets: true,
+                padding: { top: 6, bottom: 6 },
+              }}
+            />
+          </div>
+
+          {/* Editor Status Footer Bar */}
+          <div
+            className="w-full flex items-center justify-between select-none shrink-0"
+            style={{
+              height: '32px',
+              padding: '4px 12px',
+              color: 'rgb(115, 115, 115)',
+              fontSize: '12px',
+              borderTop: '1px solid rgba(0,0,0,0.08)',
+            }}
+          >
+            <span>Saved</span>
+            <span>
+              Ln {cursorPos.line}, Col {cursorPos.column}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

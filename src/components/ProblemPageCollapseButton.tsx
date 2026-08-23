@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { IProblem } from '@/models/Problem';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronRight, Lock, ListFilter, Lightbulb, MessageSquare, SquarePen, Tag } from 'lucide-react';
+import { ChevronRight, Building2, ListFilter, Lightbulb, MessageSquare, SquarePen, Tag } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 
@@ -57,27 +57,27 @@ export default function ProblemPageCollapseButton({ problemInfo }: { problemInfo
       {/* Companies Accordion */}
       <Collapsible open={openCompanies} onOpenChange={setOpenCompanies} className="w-full py-3">
         <CollapsibleTrigger className="flex items-center justify-between w-full text-left group hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer">
-          <div className="flex items-center gap-2.5 font-medium text-amber-500">
-            <Lock className="w-3.5 h-3.5 text-amber-500" />
+          <div className="flex items-center gap-2.5 font-medium text-neutral-700 dark:text-neutral-300">
+            <Building2 className="w-3.5 h-3.5 text-neutral-500" />
             <span>Companies</span>
           </div>
-          <ChevronRight className={`w-3.5 h-3.5 text-amber-500/70 transition-transform duration-200 ${openCompanies ? 'rotate-90' : ''}`} />
+          <ChevronRight className={`w-3.5 h-3.5 text-neutral-400 transition-transform duration-200 ${openCompanies ? 'rotate-90' : ''}`} />
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3 flex flex-wrap gap-1.5">
           {companiesList.length > 0 ? (
             companiesList.map((company: string, index: number) => (
               <span
                 key={index}
-                className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs border border-amber-500/20"
+                className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-xs hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
               >
                 {company}
               </span>
             ))
           ) : (
             <div className="flex gap-2">
-              <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs border border-amber-500/20">Google</span>
-              <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs border border-amber-500/20">Amazon</span>
-              <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs border border-amber-500/20">Meta</span>
+              <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-xs">Google</span>
+              <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-xs">Amazon</span>
+              <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-xs">Meta</span>
             </div>
           )}
         </CollapsibleContent>
