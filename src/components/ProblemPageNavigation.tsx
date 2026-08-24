@@ -15,6 +15,21 @@ export default function ProblemPageNavigation({
   isAskAiOpen = false,
   onCloseAskAi,
 }: ProblemPageNavigationProps) {
+  const [isAiActive, setIsAiActive] = React.useState<boolean>(false);
+
+  // Listen to global easycode-agent-status-change event
+  React.useEffect(() => {
+    const handleStatus = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      setIsAiActive(Boolean(detail.isGenerating));
+    };
+    window.addEventListener("easycode-agent-status-change" as any, handleStatus);
+    return () => {
+      window.removeEventListener("easycode-agent-status-change" as any, handleStatus);
+    };
+  }, []);
+
   // Tabs: Description | Editorial | Solutions | Submissions | Ask AI (if open)
   const tabs = [
     { id: "description", label: "Description", icon: BookText },
@@ -52,7 +67,11 @@ export default function ProblemPageNavigation({
               <div className="relative flex items-center">
                 <button
                   onClick={() => setCurrentTab(tab.id)}
-                  className="relative flex items-center gap-1.5 cursor-pointer transition-colors"
+                  className={`relative flex items-center gap-1.5 cursor-pointer transition-all ${
+                    isAiTab && isAiActive
+                      ? 'bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/30'
+                      : ''
+                  }`}
                   style={{
                     padding: isAiTab ? '4px 4px 4px 8px' : '4px 8px',
                     borderRadius: '5px',
@@ -60,26 +79,53 @@ export default function ProblemPageNavigation({
                     fontWeight: isActive ? 500 : 400,
                     color: isActive
                       ? 'rgb(26, 26, 26)'
+                      : isAiTab && isAiActive
+                      ? '#10b981'
                       : 'rgba(0, 0, 0, 0.55)',
                     fontSize: '14px',
                     lineHeight: '21px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
+                    backgroundColor: isAiTab && isAiActive ? undefined : 'transparent',
+                    border: isAiTab && isAiActive ? undefined : 'none',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActive) (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.04)');
+                    if (!isActive && !(isAiTab && isAiActive)) (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.04)');
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
+                    if (!isActive && !(isAiTab && isAiActive)) e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
                   <Icon
-                    style={{ width: '14px', height: '14px', opacity: isActive ? 0.9 : 0.5 }}
-                    className={isActive ? 'text-neutral-900 dark:text-white' : 'text-neutral-500 dark:text-neutral-400'}
+                    style={{
+                      width: '14px',
+                      height: '14px',
+                      opacity: isActive || (isAiTab && isAiActive) ? 1 : 0.5,
+                      ...(isAiTab && isAiActive ? { animationDuration: '3s' } : {}),
+                    }}
+                    className={
+                      isAiTab && isAiActive
+                        ? 'text-emerald-500 dark:text-emerald-400 animate-spin'
+                        : isActive
+                        ? 'text-neutral-900 dark:text-white'
+                        : 'text-neutral-500 dark:text-neutral-400'
+                    }
                   />
-                  <span className={isActive ? 'text-neutral-950 dark:text-white font-medium' : 'text-neutral-600 dark:text-neutral-400'}>
+                  <span className={
+                    isAiTab && isAiActive
+                      ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                      : isActive
+                      ? 'text-neutral-950 dark:text-white font-medium'
+                      : 'text-neutral-600 dark:text-neutral-400'
+                  }>
                     {tab.label}
                   </span>
+
+                  {/* Pulsing Emerald Dot Indicator when AI is active */}
+                  {isAiTab && isAiActive && (
+                    <span className="relative flex h-2 w-2 ml-0.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                    </span>
+                  )}
                 </button>
 
                 {/* Close button for Ask AI tab */}

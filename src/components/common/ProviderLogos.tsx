@@ -228,6 +228,112 @@ export function ProviderLogo({
     );
   }
 
+  // 15. Cloudflare Workers AI Gateway
+  if (p.includes("cloudflare") || m.includes("@cf/") || m.includes("cloudflare")) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className={className}
+      >
+        <path d="M18.8 9.2A5.5 5.5 0 0 0 8.5 7.1 4.5 4.5 0 0 0 4.5 11a4.5 4.5 0 0 0 .1.9A4 4 0 0 0 1 15.5 4 4 0 0 0 5 19.5h13.5a4.5 4.5 0 0 0 4.5-4.5 4.5 4.5 0 0 0-4.2-4.4v-1.4z" />
+      </svg>
+    );
+  }
+
+  // 16. Hugging Face (🤗 Emoji Mascot)
+  if (p.includes("hugging") || p.includes("hf") || m.includes("hf/") || m.includes("qwen/qwen2.5-coder") || m.includes("meta-llama/")) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className={className}
+      >
+        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm-3 8a1.5 1.5 0 1 1 1.5-1.5A1.5 1.5 0 0 1 9 10zm6 0a1.5 1.5 0 1 1 1.5-1.5A1.5 1.5 0 0 1 15 10zm-3 7.5a4.5 4.5 0 0 1-4.2-2.8.5.5 0 0 1 .4-.7h7.6a.5.5 0 0 1 .4.7 4.5 4.5 0 0 1-4.2 2.8z" />
+      </svg>
+    );
+  }
+
+  // 17. Pollinations.ai (Flower / Seed Sparkle)
+  if (p.includes("pollinations") || m.includes("pollinations") || m.includes("flux")) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className={className}
+      >
+        <path d="M12 2a3 3 0 0 0-3 3v2.2A5.5 5.5 0 0 0 6 12a5.5 5.5 0 0 0 3 4.8V19a3 3 0 0 0 6 0v-2.2A5.5 5.5 0 0 0 18 12a5.5 5.5 0 0 0-3-4.8V5a3 3 0 0 0-3-3zm0 4a1 1 0 0 1 1 1v1.1a5.4 5.4 0 0 0-2 0V7a1 1 0 0 1 1-1zm-3.5 6a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0zm3.5 6a1 1 0 0 1-1-1v-1.1a5.4 5.4 0 0 0 2 0V17a1 1 0 0 1-1 1z" />
+      </svg>
+    );
+  }
+
+  // 18. Stability AI
+  if (p.includes("stability") || m.includes("stability") || m.includes("sd3") || m.includes("stable-diffusion")) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className={className}
+      >
+        <path d="M12 2L14.8 9.2L22 12L14.8 14.8L12 22L9.2 14.8L2 12L9.2 9.2L12 2Z" />
+        <circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+    );
+  }
+
+  // 19. Replicate (Official Replicate Stacked Bars)
+  if (p.includes("replicate") || m.includes("replicate") || m.includes("wan")) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className={className}
+      >
+        <path d="M4 4h16v3H4zm0 6h11v3H4zm0 6h16v3H4z" />
+      </svg>
+    );
+  }
+
+  // 20. Fal.ai
+  if (p.includes("fal") || m.includes("fal")) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className={className}
+      >
+        <path d="M13 2L3 14h7v8l11-13h-8z" />
+      </svg>
+    );
+  }
+
+  // 21. Luma AI & Kling AI (Video Studios)
+  if (p.includes("luma") || p.includes("kling") || m.includes("luma") || m.includes("kling") || m.includes("video")) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className={className}
+      >
+        <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 3v2h2V7H4zm0 4v2h2v-2H4zm0 4v2h2v-2H4zm16-8h-2v2h2V7zm0 4h-2v2h2v-2zm0 4h-2v2h2v-2zm-12-6v8l7-4-7-4z" />
+      </svg>
+    );
+  }
+
   // Default: EasyCode Platform Sparkle / Star
   return (
     <svg

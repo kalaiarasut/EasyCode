@@ -34,10 +34,14 @@ import {
   Wand2,
   FileCheck2,
   Eye,
+  EyeOff,
   Pencil,
   RotateCcw,
   Copy,
   X,
+  Image as ImageIcon,
+  Film,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { BUILT_IN_SKILLS, DEFAULT_AI_RULES, AiSkill, AiRule } from "@/types/skillsAndRules";
@@ -153,6 +157,17 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     hyperbolic: "",
     novita: "",
 
+    // Visual & Video Generation AI Providers
+    pollinations: "",
+    huggingface: "",
+    cloudflare: "",
+    cloudflareAccountId: "",
+    stability: "",
+    replicate: "",
+    fal: "",
+    kling: "",
+    luma: "",
+
     // Local & Custom Endpoints
     ollamaUrl: "",
     lmStudioUrl: "",
@@ -161,6 +176,12 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     customApiKey: "",
     customModelName: "",
   });
+
+  // Server-hosted environment keys detection state (strictly populated from GET /api/user/keys)
+  const [serverHostedKeys, setServerHostedKeys] = useState<Record<string, boolean>>({});
+
+  // Input password visibility toggles per key
+  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (session?.user) {
@@ -220,18 +241,19 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         setApiKeys((prev) => ({ ...prev, ...JSON.parse(savedKeys) }));
       }
 
-      // Fetch from Supabase cloud table if authenticated
-      if (session?.user) {
-        fetch("/api/user/keys")
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.success && data.keys && Object.keys(data.keys).length > 0) {
-              setApiKeys((prev) => ({ ...prev, ...data.keys }));
-              localStorage.setItem("easycode_custom_keys", JSON.stringify(data.keys));
-            }
-          })
-          .catch(() => {});
-      }
+      // Fetch server hosted env keys and user saved keys
+      fetch("/api/user/keys")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.serverHostedKeys) {
+            setServerHostedKeys(data.serverHostedKeys);
+          }
+          if (data.success && data.keys && Object.keys(data.keys).length > 0) {
+            setApiKeys((prev) => ({ ...prev, ...data.keys }));
+            localStorage.setItem("easycode_custom_keys", JSON.stringify(data.keys));
+          }
+        })
+        .catch(() => {});
     } catch (e) {}
   }, [session]);
 
@@ -485,6 +507,361 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       localStorage.removeItem("easycode_user_memories");
     } catch (e) {}
     toast.success("All memories cleared");
+  };
+
+  // Helper for comprehensive format, prefix, whitespace & cross-provider validation
+  const validateApiKeyFormat = (keyName: string, value: string): { isValid: boolean; errorReason?: string } => {
+    if (!value) return { isValid: true };
+
+    // 1. Whitespace & line break detection
+    if (value.startsWith(" ") || value.endsWith(" ")) {
+      return {
+        isValid: false,
+        errorReason: "Key contains leading or trailing spaces. Please trim accidental spaces.",
+      };
+    }
+    if (/\s/.test(value) && keyName !== "customBaseUrl" && keyName !== "ollamaUrl") {
+      return {
+        isValid: false,
+        errorReason: "Key contains internal whitespace or line breaks.",
+      };
+    }
+
+    // 2. Minimum length check
+    if (value.length < 8 && keyName !== "customModelName") {
+      return {
+        isValid: false,
+        errorReason: "Key is too short to be a valid API key (minimum 8 characters required).",
+      };
+    }
+
+    // 3. Provider-specific prefix & format detection
+    switch (keyName) {
+      case "gemini":
+        if (value.startsWith("sk-") || value.startsWith("gsk_") || value.startsWith("hf_")) {
+          return {
+            isValid: false,
+            errorReason: "Mismatched key: Looks like OpenAI, Groq, or Hugging Face. Google Gemini keys start with 'AIzaSy...'.",
+          };
+        }
+        if (!value.startsWith("AIza")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Gemini key format. Google AI Studio keys start with 'AIzaSy...'.",
+          };
+        }
+        break;
+
+      case "groq":
+        if (value.startsWith("AIza") || value.startsWith("sk-ant-") || value.startsWith("hf_")) {
+          return {
+            isValid: false,
+            errorReason: "Mismatched key: Looks like Google Gemini, Anthropic, or Hugging Face. Groq keys must start with 'gsk_'.",
+          };
+        }
+        if (!value.startsWith("gsk_")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Groq key format. Groq API keys start with 'gsk_'.",
+          };
+        }
+        break;
+
+      case "anthropic":
+        if (value.startsWith("AIza") || value.startsWith("gsk_") || value.startsWith("hf_")) {
+          return {
+            isValid: false,
+            errorReason: "Mismatched key: Looks like Gemini, Groq, or Hugging Face. Anthropic keys start with 'sk-ant-'.",
+          };
+        }
+        if (!value.startsWith("sk-ant-")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Anthropic key format. Claude API keys start with 'sk-ant-'.",
+          };
+        }
+        break;
+
+      case "openai":
+        if (value.startsWith("AIza") || value.startsWith("gsk_") || value.startsWith("hf_") || value.startsWith("sk-ant-")) {
+          return {
+            isValid: false,
+            errorReason: "Mismatched key: Looks like Gemini, Groq, Anthropic, or Hugging Face. OpenAI keys start with 'sk-proj-' or 'sk-'.",
+          };
+        }
+        if (!value.startsWith("sk-")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid OpenAI key format. OpenAI API keys start with 'sk-'.",
+          };
+        }
+        break;
+
+      case "huggingface":
+        if (value.startsWith("AIza") || value.startsWith("gsk_") || value.startsWith("sk-ant-")) {
+          return {
+            isValid: false,
+            errorReason: "Mismatched key: Looks like Gemini, Groq, or Anthropic. Hugging Face tokens start with 'hf_'.",
+          };
+        }
+        if (!value.startsWith("hf_")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Hugging Face token format. Access tokens start with 'hf_'.",
+          };
+        }
+        break;
+
+      case "openrouter":
+        if (!value.startsWith("sk-or-")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid OpenRouter key format. OpenRouter keys start with 'sk-or-v1-'.",
+          };
+        }
+        break;
+
+      case "cerebras":
+        if (!value.startsWith("csk-")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Cerebras key format. Cerebras keys start with 'csk-'.",
+          };
+        }
+        break;
+
+      case "fireworks":
+        if (!value.startsWith("fw_")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Fireworks key format. Fireworks keys start with 'fw_'.",
+          };
+        }
+        break;
+
+      case "replicate":
+        if (!value.startsWith("r8_")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Replicate token format. Replicate tokens start with 'r8_'.",
+          };
+        }
+        break;
+
+      case "perplexity":
+        if (!value.startsWith("pplx-")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Perplexity key format. Perplexity keys start with 'pplx-'.",
+          };
+        }
+        break;
+
+      case "grok":
+        if (!value.startsWith("xai-")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid xAI Grok key format. xAI keys start with 'xai-'.",
+          };
+        }
+        break;
+
+      case "kimi":
+      case "deepseek":
+      case "qwen":
+      case "siliconflow":
+      case "stability":
+        if (value.startsWith("AIza") || value.startsWith("gsk_") || value.startsWith("hf_") || value.startsWith("sk-ant-")) {
+          return {
+            isValid: false,
+            errorReason: `Mismatched key: Looks like Gemini, Groq, Anthropic, or Hugging Face. Expected '${keyName}' API key.`,
+          };
+        }
+        if (!value.startsWith("sk-")) {
+          return {
+            isValid: false,
+            errorReason: `Invalid ${keyName} key format. Typically starts with 'sk-'.`,
+          };
+        }
+        break;
+
+      case "cloudflare":
+        if (value.length < 20) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Cloudflare API Token. Too short (minimum 20 characters).",
+          };
+        }
+        break;
+
+      case "cloudflareAccountId":
+        if (!/^[a-f0-9]{32}$/i.test(value)) {
+          return {
+            isValid: false,
+            errorReason: "Invalid Cloudflare Account ID. Must be a 32-character hexadecimal string.",
+          };
+        }
+        break;
+
+      case "ollamaUrl":
+      case "customBaseUrl":
+        if (!value.startsWith("http://") && !value.startsWith("https://")) {
+          return {
+            isValid: false,
+            errorReason: "Invalid URL. Endpoint must start with http:// or https://",
+          };
+        }
+        break;
+
+      default:
+        if (value.length < 10) {
+          return {
+            isValid: false,
+            errorReason: "Key appears incomplete or too short.",
+          };
+        }
+        break;
+    }
+
+    return { isValid: true };
+  };
+
+  // Reusable API Key Card with Automatic Server-Hosted Env Detection, Custom Override & Reversal
+  const renderApiKeyCard = ({
+    keyName,
+    label,
+    placeholder,
+    isPassword = true,
+    providerName = label,
+  }: {
+    keyName: keyof typeof apiKeys;
+    label: string;
+    placeholder?: string;
+    isPassword?: boolean;
+    providerName?: string;
+  }) => {
+    const rawValue = (apiKeys as any)[keyName] || "";
+    const isCustom = Boolean(rawValue);
+    const isServerHosted = Boolean(serverHostedKeys[keyName as string]);
+    const validation = validateApiKeyFormat(keyName as string, rawValue);
+    const isInvalid = isCustom && !validation.isValid;
+    const isVisible = Boolean(visibleKeys[keyName as string]);
+
+    const handleRevert = () => {
+      setApiKeys((prev) => ({ ...prev, [keyName]: "" }));
+      toast.success(`Reverted ${label} to server default!`);
+    };
+
+    return (
+      <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5 min-w-0 truncate">
+            <span className="truncate">{label}</span>
+            {isCustom ? (
+              isInvalid ? (
+                <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+              ) : (
+                <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              )
+            ) : isServerHosted ? (
+              <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500" />
+            ) : null}
+          </label>
+          <div className="shrink-0 flex items-center gap-1.5">
+            {isCustom ? (
+              isInvalid ? (
+                <div className="group relative flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/25 text-[10px] font-mono text-rose-600 dark:text-rose-400 cursor-help">
+                  <span>Invalid Key</span>
+                  <Info className="w-3 h-3 text-rose-500" />
+                  <div className="pointer-events-none absolute right-0 top-full mt-1 z-30 hidden group-hover:block w-64 p-2.5 rounded-lg bg-[#1C1B19] text-[#EDEDEB] dark:bg-[#ECE8DF] dark:text-[#1C1B19] text-[11px] font-sans font-normal shadow-lg border border-rose-500/30 leading-snug">
+                    <div className="font-semibold text-rose-400 dark:text-rose-600 mb-1 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      <span>Key Format Error</span>
+                    </div>
+                    <p>{validation.errorReason}</p>
+                  </div>
+                </div>
+              ) : isServerHosted ? (
+                <>
+                  <div className="group relative flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.05] border border-black/[0.08] dark:border-white/[0.08] text-[10px] font-mono text-[#524E48] dark:text-[#A8A49D] cursor-help">
+                    <span>Custom Override</span>
+                    <Info className="w-3 h-3 text-[#8C877D] dark:text-[#6E6A63]" />
+                    <div className="pointer-events-none absolute right-0 top-full mt-1 z-30 hidden group-hover:block w-56 p-2 rounded-lg bg-[#1C1B19] text-[#EDEDEB] dark:bg-[#ECE8DF] dark:text-[#1C1B19] text-[11px] font-sans font-normal shadow-lg border border-black/10 dark:border-white/10 leading-snug">
+                      Using your personal {providerName} API key with private billing & custom quotas.
+                    </div>
+                  </div>
+                  <div className="group/revert relative flex items-center">
+                    <button
+                      type="button"
+                      onClick={handleRevert}
+                      className="px-1.5 py-0.5 rounded text-[10px] font-mono text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Revert</span>
+                    </button>
+                    <div className="pointer-events-none absolute right-0 top-full mt-1 z-30 hidden group-hover/revert:block w-52 p-2 rounded-lg bg-[#1C1B19] text-[#EDEDEB] dark:bg-[#ECE8DF] dark:text-[#1C1B19] text-[11px] font-sans font-normal shadow-lg border border-black/10 dark:border-white/10 leading-snug">
+                      Reset removes your custom override key and reverts back to the shared server environment key.
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <span className="text-[10px] font-mono text-neutral-500 dark:text-neutral-400">
+                  Configured
+                </span>
+              )
+            ) : isServerHosted ? (
+              <div className="group relative flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.05] border border-black/[0.08] dark:border-white/[0.08] text-[10px] font-mono text-[#524E48] dark:text-[#A8A49D] cursor-help">
+                <Zap className="w-3 h-3 text-amber-600/80 dark:text-amber-400/80" />
+                <span>Hosted Free Access</span>
+                <Info className="w-3 h-3 text-[#8C877D] dark:text-[#6E6A63]" />
+                <div className="pointer-events-none absolute right-0 top-full mt-1 z-30 hidden group-hover:block w-60 p-2 rounded-lg bg-[#1C1B19] text-[#EDEDEB] dark:bg-[#ECE8DF] dark:text-[#1C1B19] text-[11px] font-sans font-normal shadow-lg border border-black/10 dark:border-white/10 leading-snug">
+                  Configured in server environment by default. Paste your personal key here to override during high traffic.
+                </div>
+              </div>
+            ) : (
+              <span className="text-[10px] font-mono text-[#8C877D] dark:text-[#6E6A63]">
+                Not Set
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="relative group/input flex items-center">
+          <input
+            type={isPassword ? (isVisible ? "text" : "password") : "text"}
+            name={`api-key-${keyName}-custom-input`}
+            autoComplete="new-password"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-form-type="other"
+            value={rawValue}
+            onChange={(e) => setApiKeys({ ...apiKeys, [keyName]: e.target.value })}
+            placeholder={
+              rawValue
+                ? placeholder || "API key..."
+                : isServerHosted
+                ? "Server Key Active (Paste personal key to override)"
+                : placeholder || "Paste API key..."
+            }
+            className={`w-full px-3 py-1.5 ${isPassword && rawValue ? "pr-8" : ""} rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border ${
+              isInvalid
+                ? "border-rose-500/50 focus:border-rose-500"
+                : "border-[#DFDAD0] dark:border-[#383532] focus:border-neutral-500"
+            } text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden`}
+          />
+          {isPassword && Boolean(rawValue) && (
+            <button
+              type="button"
+              onClick={() => setVisibleKeys((prev) => ({ ...prev, [keyName]: !prev[keyName] }))}
+              className="absolute right-2 p-1 rounded-md text-[#8C877D] hover:text-[#1C1B19] dark:hover:text-[#EDEDEB] hover:bg-black/5 dark:hover:bg-white/5 opacity-0 group-hover/input:opacity-100 transition-opacity cursor-pointer"
+              title={isVisible ? "Hide API key" : "Show API key"}
+            >
+              {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          )}
+        </div>
+      </div>
+    );
   };
 
   // Comprehensive Exhaustive List of Supported Model Groups (Verified Online)
@@ -1068,7 +1445,106 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       ],
     },
 
-    // 20. Local & Custom Hosts
+    // 20. Cloudflare Workers AI Gateway
+    {
+      provider: "Cloudflare Workers AI",
+      category: "Speed",
+      requiredKey: "cloudflare",
+      models: [
+        {
+          id: "@cf/meta/llama-3.3-70b-instruct",
+          name: "Llama 3.3 70B",
+          description: "Cloudflare's serverless edge inference running Meta's premier open 70B model.",
+          contextWindow: "128,000 tokens",
+          badge: "Edge SOTA",
+          requiredKey: "cloudflare",
+        },
+        {
+          id: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+          name: "DeepSeek R1 Distill 32B",
+          description: "High-speed edge reasoning model running on Cloudflare global edge network.",
+          contextWindow: "32,000 tokens",
+          badge: "Reasoning",
+          requiredKey: "cloudflare",
+        },
+        {
+          id: "@cf/qwen/qwen2.5-coder-32b-instruct",
+          name: "Qwen 2.5 Coder 32B",
+          description: "Specialized competitive programming and algorithmic coding model.",
+          contextWindow: "32,000 tokens",
+          badge: "Coding",
+          requiredKey: "cloudflare",
+        },
+        {
+          id: "@cf/meta/llama-3.1-8b-instruct",
+          name: "Llama 3.1 8B",
+          description: "Ultra-low latency serverless edge model.",
+          contextWindow: "8,000 tokens",
+          badge: "Instant",
+          requiredKey: "cloudflare",
+        },
+      ],
+    },
+
+    // 21. Hugging Face (Serverless & ZeroGPU)
+    {
+      provider: "Hugging Face (Inference API)",
+      category: "Open Source",
+      requiredKey: "huggingface",
+      models: [
+        {
+          id: "Qwen/Qwen2.5-Coder-32B-Instruct",
+          name: "Qwen 2.5 Coder 32B",
+          description: "Hugging Face hosted open coding powerhouse with 32k context.",
+          contextWindow: "32,000 tokens",
+          badge: "Top Coder",
+          requiredKey: "huggingface",
+        },
+        {
+          id: "meta-llama/Llama-3.3-70B-Instruct",
+          name: "Llama 3.3 70B",
+          description: "High-performance instruction-tuned open frontier model.",
+          contextWindow: "128,000 tokens",
+          badge: "Open SOTA",
+          requiredKey: "huggingface",
+        },
+        {
+          id: "deepseek-ai/DeepSeek-R1",
+          name: "DeepSeek R1",
+          description: "DeepSeek R1 full reasoning model on Hugging Face Serverless endpoints.",
+          contextWindow: "64,000 tokens",
+          badge: "Reasoning",
+          requiredKey: "huggingface",
+        },
+      ],
+    },
+
+    // 22. Pollinations.ai
+    {
+      provider: "Pollinations.ai (FLUX.1 & Multimodal)",
+      category: "Universal",
+      requiredKey: "pollinations",
+      models: [
+        {
+          id: "pollinations-flux",
+          name: "FLUX.1 Schnell",
+          description: "High-speed AI image synthesis and visualization pipeline.",
+          contextWindow: "Image Gen",
+          badge: "Visual SOTA",
+          requiredKey: "pollinations",
+        },
+        {
+          id: "pollinations-openai",
+          name: "Pollinations Multimodal Chat",
+          description: "Multimodal text and vision inference gateway.",
+          contextWindow: "32,000 tokens",
+          badge: "Free Gateway",
+          requiredKey: "pollinations",
+        },
+      ],
+    },
+
+    // 23. Local & Custom Hosts
     {
       provider: "Local LLMs (Private & Offline)",
       category: "Local",
@@ -1086,10 +1562,10 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     },
   ], []);
 
-  // Helper: Is a provider key present?
+  // Helper: Is a provider key present (user custom or server environment)?
   const isKeyConfigured = (keyName: string): boolean => {
     const val = apiKeys[keyName];
-    return Boolean(val && typeof val === "string" && val.trim().length > 5);
+    return Boolean((val && typeof val === "string" && val.trim().length > 5) || serverHostedKeys[keyName]);
   };
 
   // Filter model groups based on whether user has configured keys
@@ -1465,266 +1941,15 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Moonshot AI (Kimi) */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Moonshot AI (Kimi)</span>
-                    {apiKeys.kimi && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.kimi ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-kimi-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.kimi || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, kimi: e.target.value })}
-                  placeholder="sk-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* Google AI Studio (Gemini) */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Google AI Studio (Gemini)</span>
-                    {apiKeys.gemini && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.gemini ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-gemini-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.gemini || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, gemini: e.target.value })}
-                  placeholder="AIzaSy..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* OpenAI */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>OpenAI (o1, o3-mini, GPT-4o)</span>
-                    {apiKeys.openai && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.openai ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-openai-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.openai || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, openai: e.target.value })}
-                  placeholder="sk-proj-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* Anthropic */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Anthropic (Claude 3.7 / 3.5 Sonnet)</span>
-                    {apiKeys.anthropic && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.anthropic ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-anthropic-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.anthropic || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, anthropic: e.target.value })}
-                  placeholder="sk-ant-api..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* DeepSeek */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>DeepSeek (R1, V3, Coder)</span>
-                    {apiKeys.deepseek && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.deepseek ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-deepseek-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.deepseek || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, deepseek: e.target.value })}
-                  placeholder="sk-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* xAI (Grok) */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>xAI (Grok 2)</span>
-                    {apiKeys.grok && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.grok ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-grok-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.grok || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, grok: e.target.value })}
-                  placeholder="xai-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* Mistral AI */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Mistral AI (Codestral)</span>
-                    {apiKeys.mistral && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.mistral ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-mistral-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.mistral || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, mistral: e.target.value })}
-                  placeholder="Mistral API key..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* Perplexity AI */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Perplexity AI (Sonar)</span>
-                    {apiKeys.perplexity && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.perplexity ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-perplexity-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.perplexity || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, perplexity: e.target.value })}
-                  placeholder="pplx-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* Cohere */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Cohere (Command R+)</span>
-                    {apiKeys.cohere && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.cohere ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-cohere-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.cohere || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, cohere: e.target.value })}
-                  placeholder="Cohere API key..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
+              {renderApiKeyCard({ keyName: "kimi", label: "Moonshot AI (Kimi)", placeholder: "sk-..." })}
+              {renderApiKeyCard({ keyName: "gemini", label: "Google AI Studio (Gemini)", placeholder: "AIzaSy..." })}
+              {renderApiKeyCard({ keyName: "openai", label: "OpenAI (o1, o3-mini, GPT-4o)", placeholder: "sk-proj-..." })}
+              {renderApiKeyCard({ keyName: "anthropic", label: "Anthropic (Claude 3.7 / 3.5 Sonnet)", placeholder: "sk-ant-api..." })}
+              {renderApiKeyCard({ keyName: "deepseek", label: "DeepSeek (R1, V3, Coder)", placeholder: "sk-..." })}
+              {renderApiKeyCard({ keyName: "grok", label: "xAI (Grok 2)", placeholder: "xai-..." })}
+              {renderApiKeyCard({ keyName: "mistral", label: "Mistral AI (Codestral)", placeholder: "Mistral API key..." })}
+              {renderApiKeyCard({ keyName: "cohere", label: "Cohere (Command R+)", placeholder: "Cohere API key..." })}
+              {renderApiKeyCard({ keyName: "perplexity", label: "Perplexity AI (Sonar)", placeholder: "pplx-..." })}
             </div>
           </div>
 
@@ -1736,121 +1961,11 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Alibaba Cloud (Qwen) */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Alibaba Cloud DashScope (Qwen)</span>
-                    {apiKeys.qwen && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.qwen ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-qwen-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.qwen || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, qwen: e.target.value })}
-                  placeholder="sk-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* Zhipu AI (GLM) */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Zhipu AI (GLM-4 & CodeGeeX)</span>
-                    {apiKeys.zhipu && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.zhipu ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-zhipu-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.zhipu || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, zhipu: e.target.value })}
-                  placeholder="API key..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* 01.AI (Yi) */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>01.AI (Yi Lightning)</span>
-                    {apiKeys.yi && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.yi ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-yi-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.yi || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, yi: e.target.value })}
-                  placeholder="API key..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* SiliconFlow */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>SiliconFlow (SiliconCloud)</span>
-                    {apiKeys.siliconflow && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.siliconflow ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-siliconflow-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.siliconflow || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, siliconflow: e.target.value })}
-                  placeholder="sk-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
+              {renderApiKeyCard({ keyName: "qwen", label: "Alibaba Cloud DashScope (Qwen)", placeholder: "sk-..." })}
+              {renderApiKeyCard({ keyName: "zhipu", label: "Zhipu AI (GLM-4 & CodeGeeX)", placeholder: "API key..." })}
+              {renderApiKeyCard({ keyName: "yi", label: "01.AI (Yi Lightning)", placeholder: "API key..." })}
+              {renderApiKeyCard({ keyName: "baichuan", label: "Baichuan AI", placeholder: "API key..." })}
+              {renderApiKeyCard({ keyName: "siliconflow", label: "SiliconFlow (SiliconCloud)", placeholder: "sk-..." })}
             </div>
           </div>
 
@@ -1862,183 +1977,51 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Groq */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Groq</span>
-                    {apiKeys.groq && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.groq ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-groq-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.groq || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, groq: e.target.value })}
-                  placeholder="gsk_..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* Cerebras Systems */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Cerebras Systems</span>
-                    {apiKeys.cerebras && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.cerebras ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-cerebras-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.cerebras || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, cerebras: e.target.value })}
-                  placeholder="csk-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* SambaNova */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>SambaNova Systems</span>
-                    {apiKeys.sambanova && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.sambanova ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-sambanova-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.sambanova || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, sambanova: e.target.value })}
-                  placeholder="API key..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* Fireworks AI */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Fireworks AI</span>
-                    {apiKeys.fireworks && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.fireworks ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-fireworks-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.fireworks || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, fireworks: e.target.value })}
-                  placeholder="fw_..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* Together AI */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>Together AI</span>
-                    {apiKeys.together && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.together ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-together-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.together || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, together: e.target.value })}
-                  placeholder="Together API key..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
-
-              {/* OpenRouter */}
-              <div className="space-y-1.5 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
-                    <span>OpenRouter (300+ Gateway)</span>
-                    {apiKeys.openrouter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {apiKeys.openrouter ? "Configured" : "Not Set"}
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  name="api-key-openrouter-custom-input"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
-                  value={apiKeys.openrouter || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, openrouter: e.target.value })}
-                  placeholder="sk-or-v1-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
-                />
-              </div>
+              {renderApiKeyCard({ keyName: "groq", label: "Groq (LPU Inference)", placeholder: "gsk_..." })}
+              {renderApiKeyCard({ keyName: "cerebras", label: "Cerebras Systems", placeholder: "csk-..." })}
+              {renderApiKeyCard({ keyName: "sambanova", label: "SambaNova Systems", placeholder: "API key..." })}
+              {renderApiKeyCard({ keyName: "fireworks", label: "Fireworks AI", placeholder: "fw_..." })}
+              {renderApiKeyCard({ keyName: "together", label: "Together AI", placeholder: "Together API key..." })}
+              {renderApiKeyCard({ keyName: "openrouter", label: "OpenRouter (300+ Gateway)", placeholder: "sk-or-v1-..." })}
+              {renderApiKeyCard({ keyName: "deepinfra", label: "DeepInfra", placeholder: "API key..." })}
+              {renderApiKeyCard({ keyName: "hyperbolic", label: "Hyperbolic", placeholder: "API key..." })}
+              {renderApiKeyCard({ keyName: "novita", label: "Novita AI", placeholder: "API key..." })}
             </div>
           </div>
 
-          {/* SECTION 4: LOCAL & CUSTOM OPENAI-COMPATIBLE ENDPOINTS */}
+          {/* SECTION 4: DEDICATED VISUAL & VIDEO GENERATION STUDIOS (PHOTO & MOTION ONLY) */}
+          <div className="space-y-3 pt-4 border-t border-[#E8E4DB] dark:border-[#2D2B28]">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                <ImageIcon className="w-3.5 h-3.5 text-amber-500" />
+                <span>Dedicated Visual & Video Generation Studios</span>
+              </div>
+              <span className="text-[10px] text-neutral-400 font-mono">Specialized Media Only</span>
+            </div>
+
+            {/* Explanatory Notice: Gemini / OpenAI already power multimodal tools */}
+            <div className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-[#DFDAD0] dark:border-[#383532] text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed space-y-1">
+              <div className="flex items-center gap-1.5 font-medium text-neutral-900 dark:text-neutral-100">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Unified Multimodal Engines</span>
+              </div>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                All-in-one multimodal platforms like <strong>Google Gemini</strong> and <strong>OpenAI GPT-4o</strong> configured in Section 1 already handle image understanding and generation automatically. The studios below provide dedicated standalone image & video rendering pipelines:
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {renderApiKeyCard({ keyName: "pollinations", label: "Pollinations.ai (FLUX.1 & Motion Video)", placeholder: "Custom token..." })}
+              {renderApiKeyCard({ keyName: "huggingface", label: "Hugging Face (ZeroGPU Spaces)", placeholder: "hf_..." })}
+              {renderApiKeyCard({ keyName: "stability", label: "Stability AI (SD3 Large / Ultra)", placeholder: "sk-..." })}
+              {renderApiKeyCard({ keyName: "replicate", label: "Replicate (Wan2.1 / LTX / CogVideo)", placeholder: "r8_..." })}
+              {renderApiKeyCard({ keyName: "fal", label: "Fal.ai (FLUX.1 Realism & Fast Video)", placeholder: "Key ID:Secret..." })}
+              {renderApiKeyCard({ keyName: "luma", label: "Luma Dream Machine API", placeholder: "luma-..." })}
+              {renderApiKeyCard({ keyName: "kling", label: "Kling AI Video Studio", placeholder: "kling-..." })}
+            </div>
+          </div>
+
+          {/* SECTION 5: LOCAL & CUSTOM OPENAI-COMPATIBLE ENDPOINTS */}
           <div className="space-y-3 pt-4 border-t border-[#E8E4DB] dark:border-[#2D2B28]">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
               <HardDrive className="w-3.5 h-3.5 text-neutral-500" />
@@ -2065,15 +2048,158 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                   autoCapitalize="off"
                   spellCheck={false}
                   data-form-type="other"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-bwignore="true"
                   value={apiKeys.ollamaUrl || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, ollamaUrl: e.target.value })}
                   placeholder="http://localhost:11434"
                   className="w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden focus:border-neutral-500"
                 />
               </div>
+
+              {/* Cloudflare Workers AI Token & Account ID (with Dynamic Validation & Visibility Toggle) */}
+              {(() => {
+                const cfToken = apiKeys.cloudflare || "";
+                const cfAccId = apiKeys.cloudflareAccountId || "";
+                const isCfCustom = Boolean(cfToken || cfAccId);
+                const isCfHosted = Boolean(serverHostedKeys.cloudflare);
+                const cfTokenVal = validateApiKeyFormat("cloudflare", cfToken);
+                const cfAccVal = validateApiKeyFormat("cloudflareAccountId", cfAccId);
+                const isCfInvalid = (Boolean(cfToken) && !cfTokenVal.isValid) || (Boolean(cfAccId) && !cfAccVal.isValid);
+                const cfErrorMsg = !cfTokenVal.isValid ? cfTokenVal.errorReason : cfAccVal.errorReason;
+                const isTokenVisible = Boolean(visibleKeys.cloudflare);
+
+                return (
+                  <div className="space-y-2 p-3 rounded-xl bg-white/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
+                    <div className="flex items-center justify-between gap-2 min-w-0">
+                      <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5 min-w-0 truncate">
+                        <span className="truncate">Cloudflare Workers AI Gateway</span>
+                        {isCfCustom ? (
+                          isCfInvalid ? (
+                            <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                          ) : (
+                            <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          )
+                        ) : isCfHosted ? (
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        ) : null}
+                      </label>
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        {isCfCustom ? (
+                          isCfInvalid ? (
+                            <div className="group relative flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/25 text-[10px] font-mono text-rose-600 dark:text-rose-400 cursor-help">
+                              <span>Invalid Key</span>
+                              <Info className="w-3 h-3 text-rose-500" />
+                              <div className="pointer-events-none absolute right-0 top-full mt-1 z-30 hidden group-hover:block w-64 p-2.5 rounded-lg bg-[#1C1B19] text-[#EDEDEB] dark:bg-[#ECE8DF] dark:text-[#1C1B19] text-[11px] font-sans font-normal shadow-lg border border-rose-500/30 leading-snug">
+                                <div className="font-semibold text-rose-400 dark:text-rose-600 mb-1 flex items-center gap-1">
+                                  <AlertCircle className="w-3.5 h-3.5" />
+                                  <span>Cloudflare Format Error</span>
+                                </div>
+                                <p>{cfErrorMsg}</p>
+                              </div>
+                            </div>
+                          ) : isCfHosted ? (
+                            <>
+                              <div className="group relative flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.05] border border-black/[0.08] dark:border-white/[0.08] text-[10px] font-mono text-[#524E48] dark:text-[#A8A49D] cursor-help">
+                                <span>Custom Override</span>
+                                <Info className="w-3 h-3 text-[#8C877D] dark:text-[#6E6A63]" />
+                                <div className="pointer-events-none absolute right-0 top-full mt-1 z-30 hidden group-hover:block w-56 p-2 rounded-lg bg-[#1C1B19] text-[#EDEDEB] dark:bg-[#ECE8DF] dark:text-[#1C1B19] text-[11px] font-sans font-normal shadow-lg border border-black/10 dark:border-white/10 leading-snug">
+                                  Using your dedicated personal Cloudflare API Token & Account ID.
+                                </div>
+                              </div>
+                              <div className="group/revert relative flex items-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setApiKeys((prev) => ({ ...prev, cloudflare: "", cloudflareAccountId: "" }));
+                                    toast.success("Reverted to shared Cloudflare gateway!");
+                                  }}
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-mono text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-1 cursor-pointer"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Revert</span>
+                                </button>
+                                <div className="pointer-events-none absolute right-0 top-full mt-1 z-30 hidden group-hover/revert:block w-52 p-2 rounded-lg bg-[#1C1B19] text-[#EDEDEB] dark:bg-[#ECE8DF] dark:text-[#1C1B19] text-[11px] font-sans font-normal shadow-lg border border-black/10 dark:border-white/10 leading-snug">
+                                  Reset removes your custom override key and reverts back to the shared server environment key.
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-[10px] font-mono text-neutral-500 dark:text-neutral-400">
+                              Configured
+                            </span>
+                          )
+                        ) : isCfHosted ? (
+                          <div className="group relative flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.05] border border-black/[0.08] dark:border-white/[0.08] text-[10px] font-mono text-[#524E48] dark:text-[#A8A49D] cursor-help">
+                            <Zap className="w-3 h-3 text-amber-600/80 dark:text-amber-400/80" />
+                            <span>Hosted Free Access</span>
+                            <Info className="w-3 h-3 text-[#8C877D] dark:text-[#6E6A63]" />
+                            <div className="pointer-events-none absolute right-0 top-full mt-1 z-30 hidden group-hover:block w-60 p-2 rounded-lg bg-[#1C1B19] text-[#EDEDEB] dark:bg-[#ECE8DF] dark:text-[#1C1B19] text-[11px] font-sans font-normal shadow-lg border border-black/10 dark:border-white/10 leading-snug">
+                              Configured in server environment by default. Paste personal credentials to override.
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] font-mono text-[#8C877D] dark:text-[#6E6A63]">
+                            Not Set
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div className="relative group/input flex items-center">
+                        <input
+                          type={isTokenVisible ? "text" : "password"}
+                          name="api-key-cf-token-input"
+                          autoComplete="new-password"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          spellCheck={false}
+                          data-form-type="other"
+                          value={cfToken}
+                          onChange={(e) => setApiKeys({ ...apiKeys, cloudflare: e.target.value })}
+                          placeholder={
+                            cfToken
+                              ? "API Token (e.g. z9X...)"
+                              : isCfHosted
+                              ? "Shared Gateway Active (Paste custom token to override)"
+                              : "API Token (e.g. z9X...)"
+                          }
+                          className={`w-full px-3 py-1.5 ${cfToken ? "pr-8" : ""} rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border ${
+                            cfToken && !cfTokenVal.isValid
+                              ? "border-rose-500/50 focus:border-rose-500"
+                              : "border-[#DFDAD0] dark:border-[#383532] focus:border-neutral-500"
+                          } text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden`}
+                        />
+                        {Boolean(cfToken) && (
+                          <button
+                            type="button"
+                            onClick={() => setVisibleKeys((prev) => ({ ...prev, cloudflare: !prev.cloudflare }))}
+                            className="absolute right-2 p-1 rounded-md text-[#8C877D] hover:text-[#1C1B19] dark:hover:text-[#EDEDEB] hover:bg-black/5 dark:hover:bg-white/5 opacity-0 group-hover/input:opacity-100 transition-opacity cursor-pointer"
+                            title={isTokenVisible ? "Hide API key" : "Show API key"}
+                          >
+                            {isTokenVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        name="api-key-cf-account-id-input"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-form-type="other"
+                        value={cfAccId}
+                        onChange={(e) => setApiKeys({ ...apiKeys, cloudflareAccountId: e.target.value })}
+                        placeholder={cfAccId ? "Account ID (32-char hex)" : "Account ID (32-char hex)"}
+                        className={`w-full px-3 py-1.5 rounded-lg bg-[#ECE8DF]/60 dark:bg-[#282624]/60 border ${
+                          cfAccId && !cfAccVal.isValid
+                            ? "border-rose-500/50 focus:border-rose-500"
+                            : "border-[#DFDAD0] dark:border-[#383532] focus:border-neutral-500"
+                        } text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden`}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Custom Base URL & Key */}
               <div className="p-3.5 rounded-xl bg-[#ECE8DF]/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532] space-y-3">
@@ -2097,22 +2223,34 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                     placeholder="Base URL (e.g. https://my-cluster.ai/v1)"
                     className="w-full px-3 py-1.5 rounded-lg bg-white/70 dark:bg-[#201F1D] border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] outline-hidden"
                   />
-                  <input
-                    type="password"
-                    name="api-key-custom-api-key-input"
-                    autoComplete="new-password"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    data-form-type="other"
-                    data-1p-ignore="true"
-                    data-lpignore="true"
-                    data-bwignore="true"
-                    value={apiKeys.customApiKey || ""}
-                    onChange={(e) => setApiKeys({ ...apiKeys, customApiKey: e.target.value })}
-                    placeholder="API Key (optional if local)"
-                    className="w-full px-3 py-1.5 rounded-lg bg-white/70 dark:bg-[#201F1D] border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] outline-hidden"
-                  />
+                  <div className="relative group/input flex items-center">
+                    <input
+                      type={visibleKeys.customApiKey ? "text" : "password"}
+                      name="api-key-custom-api-key-input"
+                      autoComplete="new-password"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      data-form-type="other"
+                      data-1p-ignore="true"
+                      data-lpignore="true"
+                      data-bwignore="true"
+                      value={apiKeys.customApiKey || ""}
+                      onChange={(e) => setApiKeys({ ...apiKeys, customApiKey: e.target.value })}
+                      placeholder="API Key (optional if local)"
+                      className={`w-full px-3 py-1.5 ${apiKeys.customApiKey ? "pr-8" : ""} rounded-lg bg-white/70 dark:bg-[#201F1D] border border-[#DFDAD0] dark:border-[#383532] text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] outline-hidden`}
+                    />
+                    {Boolean(apiKeys.customApiKey) && (
+                      <button
+                        type="button"
+                        onClick={() => setVisibleKeys((prev) => ({ ...prev, customApiKey: !prev.customApiKey }))}
+                        className="absolute right-2 p-1 rounded-md text-[#8C877D] hover:text-[#1C1B19] dark:hover:text-[#EDEDEB] hover:bg-black/5 dark:hover:bg-white/5 opacity-0 group-hover/input:opacity-100 transition-opacity cursor-pointer"
+                        title={visibleKeys.customApiKey ? "Hide API key" : "Show API key"}
+                      >
+                        {visibleKeys.customApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

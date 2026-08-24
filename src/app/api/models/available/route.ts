@@ -207,7 +207,37 @@ export async function POST(req: NextRequest) {
       } catch (e) {}
     }
 
-    // 11. Local Ollama Check
+    // 11. Cloudflare Workers AI Gateway
+    const cfToken = customKeys.cloudflare || process.env.CLOUDFLARE_API_TOKEN;
+    if (cfToken && cfToken.trim().length > 10) {
+      availableByProvider.cloudflare = [
+        "@cf/meta/llama-3.3-70b-instruct",
+        "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+        "@cf/qwen/qwen2.5-coder-32b-instruct",
+        "@cf/meta/llama-3.1-8b-instruct",
+      ];
+    }
+
+    // 12. Hugging Face Inference
+    const hfToken = customKeys.huggingface || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+    if (hfToken && hfToken.trim().length > 5) {
+      availableByProvider.huggingface = [
+        "Qwen/Qwen2.5-Coder-32B-Instruct",
+        "meta-llama/Llama-3.3-70B-Instruct",
+        "deepseek-ai/DeepSeek-R1",
+      ];
+    }
+
+    // 13. Pollinations.ai (FLUX.1 & Multimodal)
+    const polKey = customKeys.pollinations || process.env.POLLINATIONS_API_KEY;
+    if (polKey || process.env.POLLINATIONS_API_KEY !== undefined) {
+      availableByProvider.pollinations = [
+        "pollinations-flux",
+        "pollinations-openai",
+      ];
+    }
+
+    // 14. Local Ollama Check
     try {
       const res = await fetch("http://localhost:11434/api/tags", { signal: AbortSignal.timeout(1000) });
       if (res.ok) {

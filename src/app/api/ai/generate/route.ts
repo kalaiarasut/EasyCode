@@ -101,12 +101,17 @@ Model: ${model}
 ${customInstructions ? `Custom User Preferences: ${customInstructions}` : ''}
 ${memoryContext}
 
+CRITICAL FORMATTING GUIDELINES (Official LeetCode Style):
+1. NO raw LaTeX math markup (NEVER output $$, \\text{}, \\max, \\min, \\times, \\cdot, \\le, \\ge).
+2. Write all equations, variables, and indexing in standard LeetCode plain code format with backticks, e.g. \`Water[i] = max(0, min(max_left[i], max_right[i]) - heights[i]) * widths[i]\` and \`1 <= nums.length <= 10^5\`.
+3. Paragraphs and examples must match the exact tone, clarity, and structure of canonical LeetCode problems (like Two Sum).
+
 Generate a complete, high-quality LeetCode-style challenge matching this exact JSON format without markdown backticks:
 {
   "title": "Problem Title",
   "level": "${difficulty}",
   "topics": ["${topic}", "Algorithms", "Optimization"],
-  "description": "Clear and detailed problem statement with context and mathematical/algorithmic objectives.",
+  "description": "Clear and detailed problem statement with context and mathematical/algorithmic objectives. Use inline backticks for variables like \`nums\`, \`target\`, \`k\`.",
   "constraints": [
     "1 <= nums.length <= 10^5",
     "-10^9 <= nums[i] <= 10^9"
@@ -713,7 +718,84 @@ Generate a complete, high-quality LeetCode-style challenge matching this exact J
             }
         }
 
-        // 20. Custom OpenAI-Compatible Base URL
+        // 20. Cloudflare Workers AI Gateway
+        else if (model.startsWith("@cf/") || model.startsWith("cloudflare")) {
+            const cfToken = customKeys.cloudflare || process.env.CLOUDFLARE_API_TOKEN;
+            const cfAccountId = customKeys.cloudflareAccountId || process.env.CLOUDFLARE_ACCOUNT_ID;
+            if (cfToken && cfAccountId) {
+                try {
+                    const targetModel = model.startsWith("@cf/") ? model : "@cf/meta/llama-3.3-70b-instruct";
+                    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/v1/chat/completions`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${cfToken}`
+                        },
+                        body: JSON.stringify({
+                            model: targetModel,
+                            messages: [{ role: "user", content: systemPrompt }],
+                            response_format: { type: "json_object" }
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.choices?.[0]?.message?.content) {
+                        generatedProblem = JSON.parse(data.choices[0].message.content);
+                    }
+                } catch (err) {
+                    console.warn("Cloudflare Workers AI error:", err);
+                }
+            }
+        }
+
+        // 21. Hugging Face Inference
+        else if (model.startsWith("Qwen/") || model.startsWith("meta-llama/") || model.startsWith("deepseek-ai/")) {
+            const apiKey = customKeys.huggingface || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+            if (apiKey) {
+                try {
+                    const res = await fetch("https://router.huggingface.co/hf-inference/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify({
+                            model: model,
+                            messages: [{ role: "user", content: systemPrompt }],
+                            response_format: { type: "json_object" }
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.choices?.[0]?.message?.content) {
+                        generatedProblem = JSON.parse(data.choices[0].message.content);
+                    }
+                } catch (err) {
+                    console.warn("Hugging Face error:", err);
+                }
+            }
+        }
+
+        // 22. Pollinations.ai Gateway
+        else if (model.startsWith("pollinations")) {
+            try {
+                const res = await fetch("https://text.pollinations.ai/openai/chat/completions", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        model: "openai",
+                        messages: [{ role: "user", content: systemPrompt }],
+                        response_format: { type: "json_object" }
+                    })
+                });
+                const data = await res.json();
+                if (data.choices?.[0]?.message?.content) {
+                    generatedProblem = JSON.parse(data.choices[0].message.content);
+                }
+            } catch (err) {
+                console.warn("Pollinations AI error:", err);
+            }
+        }
+
+        // 23. Custom OpenAI-Compatible Base URL
         else if (customKeys.customBaseUrl) {
             try {
                 const endpoint = `${customKeys.customBaseUrl.replace(/\/$/, '')}/chat/completions`;

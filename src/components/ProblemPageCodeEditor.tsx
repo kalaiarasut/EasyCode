@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState, useRef } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bookmark,
   Braces,
@@ -26,6 +27,7 @@ import {
   Code,
   Eye,
   EyeOff,
+  Sparkles,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -272,16 +274,43 @@ export default function ProblemPageCodeEditor({
     oldCode: string;
   } | null>(null);
 
-  // Listen to Agent code apply event to render green added lines & red highlights
+  // Agent Active Editing & Oceanic Shimmer State
+  const [isAgentEditing, setIsAgentEditing] = useState<boolean>(false);
+  const [agentActionVerb, setAgentActionVerb] = useState<string>("Synthesizing Code...");
+
+  // Listen to Agent status and code apply events to render oceanic shimmer & green added lines
   useEffect(() => {
+    const handleAgentStatus = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      if (detail.isAgentMode && detail.isGenerating) {
+        setIsAgentEditing(true);
+        setAgentActionVerb(detail.verb ? `${detail.verb} Code...` : "Agent Synthesizing Code...");
+      } else if (!detail.isGenerating && !activeDiffMeta) {
+        setIsAgentEditing(false);
+      }
+    };
+
     const handleDiffApplied = (e: any) => {
       const detail = e.detail;
       if (!detail) return;
-      setActiveDiffMeta({
-        additions: detail.additions || 0,
-        deletions: detail.deletions || 0,
-        oldCode: detail.oldCode || "",
-      });
+      if (detail.isReviewModeAccept) {
+        // User already accepted in chat - do NOT pop up the secondary Keep/Revert prompt!
+        setActiveDiffMeta(null);
+      } else {
+        setActiveDiffMeta({
+          additions: detail.additions || 0,
+          deletions: detail.deletions || 0,
+          oldCode: typeof detail.oldCode === "string" ? detail.oldCode : (sourceCode || ""),
+        });
+      }
+
+      // Trigger oceanic shimmer for 3.5s on direct apply
+      setIsAgentEditing(true);
+      setAgentActionVerb(detail.isReviewModeAccept ? "⚡ Code Applied" : "⚡ Agent Applied Changes");
+      setTimeout(() => {
+        setIsAgentEditing(false);
+      }, 3500);
 
       if (editorRef.current && monacoRef.current && Array.isArray(detail.addedLineIndices) && detail.addedLineIndices.length > 0) {
         const monaco = monacoRef.current;
@@ -297,11 +326,13 @@ export default function ProblemPageCodeEditor({
       }
     };
 
+    window.addEventListener("easycode-agent-status-change" as any, handleAgentStatus);
     window.addEventListener("easycode-agent-diff-applied" as any, handleDiffApplied);
     return () => {
+      window.removeEventListener("easycode-agent-status-change" as any, handleAgentStatus);
       window.removeEventListener("easycode-agent-diff-applied" as any, handleDiffApplied);
     };
-  }, []);
+  }, [sourceCode, activeDiffMeta]);
 
   const handleDismissDiff = () => {
     if (editorRef.current) {
@@ -311,7 +342,7 @@ export default function ProblemPageCodeEditor({
   };
 
   const handleRevertDiff = () => {
-    if (activeDiffMeta?.oldCode) {
+    if (activeDiffMeta && typeof activeDiffMeta.oldCode === "string") {
       setSourceCode(activeDiffMeta.oldCode);
       toast.info("Reverted to previous code");
     }
@@ -363,7 +394,7 @@ export default function ProblemPageCodeEditor({
   useEffect(() => {
     const langConfig = codingLanguages[selectedLanguage as LanguageName] || codingLanguages["Java"] || codingLanguages["C++"];
     setSelectedLanguageCode(langConfig.apiId);
-    if (!sourceCode) {
+    if (!sourceCode && problemId !== "new" && problemId !== "generate" && !problemId.startsWith("c0000000")) {
       setSourceCode(langConfig.defaultBoilerplate);
     }
   }, [selectedLanguage]);
@@ -372,13 +403,19 @@ export default function ProblemPageCodeEditor({
     setSelectedLanguage(lang);
     const langConfig = codingLanguages[lang];
     setSelectedLanguageCode(langConfig.apiId);
-    setSourceCode(langConfig.defaultBoilerplate);
+    if (problemId !== "new" && problemId !== "generate" && !problemId.startsWith("c0000000")) {
+      setSourceCode(langConfig.defaultBoilerplate);
+    }
   };
 
   const handleResetCode = () => {
     const langConfig = codingLanguages[selectedLanguage as LanguageName] || codingLanguages["Java"] || codingLanguages["C++"];
-    setSourceCode(langConfig.defaultBoilerplate);
-    toast.info("Editor reset to starter template");
+    if (problemId !== "new" && problemId !== "generate" && !problemId.startsWith("c0000000")) {
+      setSourceCode(langConfig.defaultBoilerplate);
+    } else {
+      setSourceCode("");
+    }
+    toast.info("Editor reset");
   };
 
   const handleFormatCode = () => {
@@ -810,8 +847,56 @@ export default function ProblemPageCodeEditor({
             </div>
           )}
 
-          {/* Monaco Code Editor */}
-          <div className="flex-1 w-full relative min-h-0">
+          {/* Monaco Code Editor Container with Oceanic Wave Shimmer on Agent Edit */}
+          <div
+            className={`flex-1 w-full relative min-h-0 transition-all ${
+              isAgentEditing
+                ? "border-l-[3.5px] border-emerald-500 shadow-[inset_0_0_25px_rgba(16,185,129,0.1)]"
+                : ""
+            }`}
+          >
+            {/* Oceanic Wave Shimmer Overlay (Bottom-Left to Top-Right fluid wave) */}
+            <AnimatePresence>
+              {isAgentEditing && (
+                <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{
+                      opacity: [0.35, 0.75, 0.45, 0.85, 0.35],
+                      backgroundPosition: ["0% 100%", "100% 0%"],
+                    }}
+                    exit={{ opacity: 0 }}
+                    transition={{
+                      duration: 4.5,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                    style={{
+                      background:
+                        "linear-gradient(135deg, transparent 0%, rgba(16, 185, 129, 0.08) 25%, rgba(6, 182, 212, 0.16) 50%, rgba(16, 185, 129, 0.08) 75%, transparent 100%)",
+                      backgroundSize: "250% 250%",
+                    }}
+                    className="absolute inset-0"
+                  />
+
+                  {/* Floating Agent Status Badge in Monaco Header */}
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="absolute top-2 right-4 z-40 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/90 dark:bg-emerald-900/90 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono shadow-xl backdrop-blur-xs select-none"
+                  >
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                    </span>
+                    <Sparkles className="w-3 h-3 text-emerald-400 animate-spin" style={{ animationDuration: '3s' }} />
+                    <span className="font-semibold">{agentActionVerb}</span>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
             <Editor
               height="100%"
               language={currentLangConfig.compilerId}
@@ -853,6 +938,18 @@ export default function ProblemPageCodeEditor({
           </div>
         </>
       )}
+
+      {/* Global CSS for Agent Diff Highlights in Monaco Editor */}
+      <style jsx global>{`
+        .monaco-diff-line-added {
+          background-color: rgba(16, 185, 129, 0.18) !important;
+        }
+        .monaco-diff-gutter-added {
+          background-color: #10b981 !important;
+          width: 4px !important;
+          margin-left: 2px !important;
+        }
+      `}</style>
     </div>
   );
 }

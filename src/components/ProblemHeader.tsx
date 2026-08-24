@@ -132,6 +132,19 @@ export default function ProblemHeader({
   // Timer state
   const [seconds, setSeconds] = useState<number>(0);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(true);
+  const [isAiActive, setIsAiActive] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleStatus = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      setIsAiActive(Boolean(detail.isGenerating));
+    };
+    window.addEventListener("easycode-agent-status-change" as any, handleStatus);
+    return () => {
+      window.removeEventListener("easycode-agent-status-change" as any, handleStatus);
+    };
+  }, []);
 
   useEffect(() => {
     let interval: any = null;
@@ -317,18 +330,30 @@ export default function ProblemHeader({
         </div>
 
         {/* 5. AI Sparkle Square */}
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-black/[0.04] dark:bg-white/[0.06] overflow-hidden">
+        <div className={`relative flex h-8 w-8 items-center justify-center rounded-md overflow-hidden transition-all ${
+          isAiActive
+            ? 'bg-emerald-500/15 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+            : 'bg-black/[0.04] dark:bg-white/[0.06]'
+        }`}>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={onOpenAi}
-                className="w-full h-full flex items-center justify-center hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
+                className="w-full h-full flex items-center justify-center hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors cursor-pointer relative"
                 title="Ask AI"
               >
-                <IconSparkleGradient />
+                <div className={isAiActive ? "animate-pulse" : ""}>
+                  <IconSparkleGradient />
+                </div>
+                {isAiActive && (
+                  <span className="absolute top-1 right-1 flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  </span>
+                )}
               </button>
             </TooltipTrigger>
-            <TooltipContent>Ask AI for Help</TooltipContent>
+            <TooltipContent>{isAiActive ? "Ask AI (Actioning...)" : "Ask AI for Help"}</TooltipContent>
           </Tooltip>
         </div>
       </div>

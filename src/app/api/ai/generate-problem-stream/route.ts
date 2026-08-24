@@ -80,13 +80,18 @@ Model: ${model}
 ${customInstructions ? `Custom User Preferences: ${customInstructions}` : ""}
 ${memoryContext}
 
+CRITICAL FORMATTING GUIDELINES (Official LeetCode Style):
+1. NO raw LaTeX math markup (NEVER output $$, \\text{}, \\max, \\min, \\times, \\cdot, \\le, \\ge).
+2. Write all equations, variables, and indexing in standard LeetCode plain code format with backticks, e.g. \`Water[i] = max(0, min(max_left[i], max_right[i]) - heights[i]) * widths[i]\` and \`1 <= nums.length <= 10^5\`.
+3. Paragraphs and examples must match the exact tone, clarity, and structure of canonical LeetCode problems (like Two Sum).
+
 You MUST return ONLY a valid JSON object (no markdown backticks, no trailing explanation, no conversational filler).
 Follow this EXACT JSON schema:
 {
   "title": "Concise LeetCode Problem Title",
   "level": "${difficulty}",
   "topics": ["${topic || "Algorithms"}", "Data Structures", "Dynamic Programming"],
-  "description": "Clear, rigorous problem statement explaining input types, target return value, and technical invariants. Use inline math or variable names like nums, target, k where relevant.",
+  "description": "Clear, rigorous problem statement explaining input types, target return value, and technical invariants. Use inline backticks for variables like \`nums\`, \`target\`, \`k\`.",
   "constraints": [
     "1 <= nums.length <= 10^5",
     "-10^9 <= nums[i] <= 10^9",

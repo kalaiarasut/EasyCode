@@ -55,13 +55,18 @@ import {
   Paperclip,
   FolderOpen,
   Square,
+  Film,
+  Network,
 } from "lucide-react";
 import { toast } from "sonner";
 import SettingsView from "./SettingsView";
 import GammaProblemCanvas from "../problem-builder/GammaProblemCanvas";
+import AiMediaCard from "@/components/common/AiMediaCard";
+import MermaidFlowchartViewer from "@/components/common/MermaidFlowchartViewer";
 import { GeneratedProblem } from "@/types/generatedProblem";
 import { ProviderLogo } from "@/components/common/ProviderLogos";
 import { BUILT_IN_SKILLS, DEFAULT_AI_RULES, AiSkill, AiRule } from "@/types/skillsAndRules";
+import { ALL_VISUAL_ENGINES, VisualEngineItem } from "@/utils/mediaGenerator";
 import {
   exportAsHtmlPresentation,
   exportAsPrintableDocument,
@@ -157,7 +162,7 @@ interface ModelDefinition {
   id: string;
   name: string;
   provider: string;
-  category: "Frontier" | "Reasoning" | "Coding" | "Speed" | "Open Source" | "Search" | "Local";
+  category: "Frontier" | "Reasoning" | "Coding" | "Speed" | "Open Source" | "Search" | "Local" | "Universal";
   badge: string;
   contextWindow: string;
   requiredKey: string;
@@ -245,6 +250,23 @@ const ALL_MODELS: ModelDefinition[] = [
   { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro", provider: "Perplexity", category: "Search", badge: "Live Search", contextWindow: "128k tokens", requiredKey: "perplexity" },
   { id: "command-r-plus", name: "Command R+", provider: "Cohere", category: "Frontier", badge: "Enterprise", contextWindow: "128k tokens", requiredKey: "cohere" },
   { id: "openrouter-auto", name: "OpenRouter Auto", provider: "OpenRouter", category: "Frontier", badge: "300+ Routing", contextWindow: "Dynamic", requiredKey: "openrouter" },
+  
+  // 17. Cloudflare Workers AI Gateway
+  { id: "@cf/meta/llama-3.3-70b-instruct", name: "Llama 3.3 70B", provider: "Cloudflare", category: "Speed", badge: "Edge SOTA", contextWindow: "128k tokens", requiredKey: "cloudflare" },
+  { id: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", name: "DeepSeek R1 Distill 32B", provider: "Cloudflare", category: "Reasoning", badge: "Reasoning", contextWindow: "32k tokens", requiredKey: "cloudflare" },
+  { id: "@cf/qwen/qwen2.5-coder-32b-instruct", name: "Qwen 2.5 Coder 32B", provider: "Cloudflare", category: "Coding", badge: "Coding", contextWindow: "32k tokens", requiredKey: "cloudflare" },
+  { id: "@cf/meta/llama-3.1-8b-instruct", name: "Llama 3.1 8B", provider: "Cloudflare", category: "Speed", badge: "Instant", contextWindow: "8k tokens", requiredKey: "cloudflare" },
+
+  // 18. Hugging Face (Inference Endpoints & Serverless)
+  { id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B", provider: "Hugging Face", category: "Coding", badge: "Top Coder", contextWindow: "32k tokens", requiredKey: "huggingface" },
+  { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B", provider: "Hugging Face", category: "Open Source", badge: "Open SOTA", contextWindow: "128k tokens", requiredKey: "huggingface" },
+  { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1", provider: "Hugging Face", category: "Reasoning", badge: "Reasoning", contextWindow: "64k tokens", requiredKey: "huggingface" },
+
+  // 19. Pollinations.ai (FLUX.1 & Multimodal)
+  { id: "pollinations-flux", name: "FLUX.1 Schnell", provider: "Pollinations.ai", category: "Universal", badge: "Visual SOTA", contextWindow: "Image Gen", requiredKey: "pollinations" },
+  { id: "pollinations-openai", name: "Pollinations Multimodal Chat", provider: "Pollinations.ai", category: "Universal", badge: "Free Gateway", contextWindow: "32k tokens", requiredKey: "pollinations" },
+
+  // 20. Local Ollama
   { id: "ollama-local", name: "Local Ollama Host", provider: "Local", category: "Local", badge: "100% Private", contextWindow: "Configurable", requiredKey: "ollamaUrl" }
 ];
 
@@ -255,6 +277,7 @@ export default function AiWorkspace() {
   const [prompt, setPrompt] = useState("");
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
   const [activeModel, setActiveModel] = useState("");
+  const [serverHostedKeys, setServerHostedKeys] = useState<Record<string, boolean>>({});
   
   // Dropdown States
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -262,10 +285,36 @@ export default function AiWorkspace() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showTopicDropdown, setShowTopicDropdown] = useState(false);
 
-  // Model Search
+  // Visual / Media Engine State
+  const [activeVisualEngine, setActiveVisualEngine] = useState<string>(() => {
+    try {
+      return localStorage.getItem("easycode_visual_engine") || "pollinations-flux";
+    } catch (e) {
+      return "pollinations-flux";
+    }
+  });
+  const [showVisualEngineDropdown, setShowVisualEngineDropdown] = useState(false);
+  const visualEngineDropdownRef = useRef<HTMLDivElement>(null);
+
+  const activeVisualEngineObj = useMemo(() => {
+    return ALL_VISUAL_ENGINES.find((e) => e.id === activeVisualEngine) || ALL_VISUAL_ENGINES[0];
+  }, [activeVisualEngine]);
+
+  // Model & Media Search
   const [modelDropdownSearch, setModelDropdownSearch] = useState("");
+  const [visualEngineSearch, setVisualEngineSearch] = useState("");
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Load server-hosted keys dynamically
+  useEffect(() => {
+    fetch("/api/user/keys")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.serverHostedKeys) setServerHostedKeys(d.serverHostedKeys);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (searchParams?.get("view") === "settings") {
@@ -563,7 +612,9 @@ export default function AiWorkspace() {
     if (!model || !model.requiredKey) return false;
     if (rateLimitedModels.has(model.id)) return false;
     const keyVal = apiKeys[model.requiredKey];
-    if (!keyVal || typeof keyVal !== "string" || keyVal.trim().length <= 5) return false;
+    const isHosted = Boolean(serverHostedKeys[model.requiredKey]);
+    const hasValidKey = Boolean((keyVal && typeof keyVal === "string" && keyVal.trim().length > 5) || isHosted);
+    if (!hasValidKey) return false;
 
     if (verifiedModelsByProvider[model.requiredKey]) {
       const activeList = verifiedModelsByProvider[model.requiredKey];
@@ -579,7 +630,7 @@ export default function AiWorkspace() {
   // List of ONLY available models (configured with verified keys and not rate limited)
   const availableModelsList = useMemo(() => {
     return ALL_MODELS.filter((m) => isModelAvailable(m));
-  }, [apiKeys, rateLimitedModels, verifiedModelsByProvider]);
+  }, [apiKeys, serverHostedKeys, rateLimitedModels, verifiedModelsByProvider]);
 
   // Set active model to first available model if current one is not available
   useEffect(() => {
@@ -629,6 +680,9 @@ export default function AiWorkspace() {
       }
       if (chatModelDropdownRef.current && !chatModelDropdownRef.current.contains(event.target as Node)) {
         setShowChatModelDropdown(false);
+      }
+      if (visualEngineDropdownRef.current && !visualEngineDropdownRef.current.contains(event.target as Node)) {
+        setShowVisualEngineDropdown(false);
       }
       if (topicDropdownRef.current && !topicDropdownRef.current.contains(event.target as Node)) {
         setShowTopicDropdown(false);
@@ -773,61 +827,112 @@ export default function AiWorkspace() {
   const currentModeData = MODE_PROMPT_SUGGESTIONS[activeMode] || MODE_PROMPT_SUGGESTIONS["Generate Problem"];
 
   const renderFormattedMessage = (content: string) => {
-    const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
-    const hasImages = imageRegex.test(content);
+    const lines = content.split("\n");
+    const elements: React.ReactNode[] = [];
+    let i = 0;
 
-    if (!hasImages) {
-      return <p className="whitespace-pre-line leading-relaxed">{content}</p>;
-    }
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
 
-    const parts: React.ReactNode[] = [];
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-    imageRegex.lastIndex = 0;
-
-    while ((match = imageRegex.exec(content)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(
-          <span key={`text-${lastIndex}`} className="whitespace-pre-line">
-            {content.substring(lastIndex, match.index)}
-          </span>
-        );
-      }
-      const alt = match[1] || "Generated Visual";
-      const src = match[2];
-      parts.push(
-        <div key={`img-${match.index}`} className="my-3 rounded-2xl overflow-hidden border border-black/[0.08] dark:border-white/[0.1] shadow-lg bg-black/5 dark:bg-white/5">
-          <img
-            src={src}
-            alt={alt}
-            className="w-full max-h-[480px] object-cover rounded-2xl hover:scale-[1.01] transition-transform duration-200"
-            loading="lazy"
+      // Check for Mermaid Code Block (```mermaid ... ```)
+      if (trimmed.startsWith("```mermaid")) {
+        const mermaidLines: string[] = [];
+        i++; // skip ```mermaid
+        while (i < lines.length && !lines[i].trim().startsWith("```")) {
+          mermaidLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length && lines[i].trim().startsWith("```")) {
+          i++; // skip closing ```
+        }
+        const chartCode = mermaidLines.join("\n").trim();
+        elements.push(
+          <MermaidFlowchartViewer
+            key={`mermaid-${i}`}
+            chart={chartCode}
+            title="System Architecture / Flowchart"
           />
-          <div className="p-2.5 flex items-center justify-between text-xs bg-black/[0.02] dark:bg-white/[0.02] border-t border-black/[0.04] dark:border-white/[0.04]">
-            <span className="font-medium text-neutral-700 dark:text-neutral-300 truncate max-w-[280px]">{alt}</span>
-            <a
-              href={src}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-amber-600 dark:text-amber-400 hover:underline font-semibold flex items-center gap-1"
-            >
-              Open Full High-Res ↗
-            </a>
-          </div>
-        </div>
-      );
-      lastIndex = imageRegex.lastIndex;
+        );
+        continue;
+      }
+
+      // Check for Video (@[video](...))
+      const videoMatch = trimmed.match(/@\[video\]\(([^)]+)\)/);
+      if (videoMatch) {
+        const fullUrl = videoMatch[1];
+        const [cleanUrl, hashParams] = fullUrl.split("#");
+        const params = new URLSearchParams(hashParams || "");
+        const poster = params.get("poster") || undefined;
+        const aspect = (params.get("aspect") as any) || "16:9";
+        const model = params.get("model") || "Motion AI Video Studio";
+        const videoPrompt = params.get("prompt") || "AI Generated Video";
+
+        elements.push(
+          <AiMediaCard
+            key={`video-${i}`}
+            type="video"
+            src={cleanUrl}
+            poster={poster}
+            prompt={videoPrompt}
+            model={model}
+            aspectRatio={aspect}
+          />
+        );
+        i++;
+        continue;
+      }
+
+      // Check for Image (![alt](...))
+      const imageMatch = trimmed.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+      if (imageMatch) {
+        const alt = imageMatch[1] || "Generated Visual";
+        const fullUrl = imageMatch[2];
+        const [cleanUrl, hashParams] = fullUrl.split("#");
+        const params = new URLSearchParams(hashParams || "");
+        const aspect = (params.get("aspect") as any) || "1:1";
+        const model = params.get("model") || "Vision AI Image Studio";
+
+        elements.push(
+          <AiMediaCard
+            key={`img-${i}`}
+            type="image"
+            src={cleanUrl}
+            prompt={alt}
+            alt={alt}
+            model={model}
+            aspectRatio={aspect}
+          />
+        );
+        i++;
+        continue;
+      }
+
+      // Header H3
+      if (trimmed.startsWith("### ")) {
+        elements.push(
+          <h3 key={`h3-${i}`} className="text-sm font-bold text-neutral-900 dark:text-neutral-100 pt-2 pb-1">
+            {trimmed.replace(/^###\s+/, "")}
+          </h3>
+        );
+        i++;
+        continue;
+      }
+
+      // Standard text line
+      if (trimmed) {
+        elements.push(
+          <p key={`line-${i}`} className="whitespace-pre-line leading-relaxed my-0.5">
+            {line}
+          </p>
+        );
+      } else {
+        elements.push(<div key={`space-${i}`} className="h-1.5" />);
+      }
+      i++;
     }
 
-    if (lastIndex < content.length) {
-      parts.push(
-        <span key={`text-${lastIndex}`} className="whitespace-pre-line">
-          {content.substring(lastIndex)}
-        </span>
-      );
-    }
-
-    return <div>{parts}</div>;
+    return <div className="space-y-1">{elements}</div>;
   };
 
   const handleCancelGeneration = () => {
@@ -981,6 +1086,18 @@ export default function AiWorkspace() {
         m.provider.toLowerCase().includes(modelDropdownSearch.toLowerCase())
     );
   }, [availableModelsList, modelDropdownSearch]);
+
+  const filteredVisualEngines = useMemo(() => {
+    if (!visualEngineSearch.trim()) return ALL_VISUAL_ENGINES;
+    const q = visualEngineSearch.toLowerCase();
+    return ALL_VISUAL_ENGINES.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        e.id.toLowerCase().includes(q) ||
+        e.provider.toLowerCase().includes(q) ||
+        e.badge.toLowerCase().includes(q)
+    );
+  }, [visualEngineSearch]);
 
   const activeModelObj = useMemo(() => {
     return ALL_MODELS.find((m) => m.id === activeModel);
@@ -1796,7 +1913,7 @@ export default function AiWorkspace() {
                               const next = !isImageMode;
                               setIsImageMode(next);
                               if (next) {
-                                toast.success("Image Generation Mode enabled: Describe any diagram, UI mockup, or artwork.");
+                                toast.success("Image Generation Mode enabled: Describe any visual, diagram, or artwork.");
                               } else {
                                 toast.info("Image Generation Mode disabled");
                               }
@@ -1810,7 +1927,47 @@ export default function AiWorkspace() {
                                 <span>Create image</span>
                                 {isImageMode && <span className="w-1.5 h-1.5 rounded-full bg-amber-600 dark:bg-amber-400" />}
                               </span>
-                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Visualize anything</span>
+                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">FLUX.1 / DALL-E</span>
+                            </div>
+                          </button>
+
+                          {/* 4. Generate video */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowPlusMenu(false);
+                              setPrompt("/video ");
+                              textareaRef.current?.focus();
+                              toast.info("Video Generation: Type what video or motion you want to render.");
+                            }}
+                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
+                          >
+                            <Film className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
+                            <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                              <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">
+                                <span>Generate video</span>
+                              </span>
+                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Motion AI / Wan 2.1</span>
+                            </div>
+                          </button>
+
+                          {/* 5. Build flowchart & diagrams */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowPlusMenu(false);
+                              setPrompt("/flowchart ");
+                              textareaRef.current?.focus();
+                              toast.info("Flowchart Studio: Describe the system architecture, logic loop, or algorithm flow.");
+                            }}
+                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
+                          >
+                            <Network className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
+                            <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                              <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">
+                                <span>Build flowchart</span>
+                              </span>
+                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Mermaid Architecture</span>
                             </div>
                           </button>
 
@@ -1984,10 +2141,79 @@ export default function AiWorkspace() {
                         </div>
                       )}
                     </div>
+
+                    {/* Visual & Media Engine Selection Pill */}
+                    <div className="relative shrink-0" ref={visualEngineDropdownRef}>
+                      <button
+                        onClick={() => setShowVisualEngineDropdown(!showVisualEngineDropdown)}
+                        className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs transition-colors font-medium cursor-pointer"
+                        title="Select Image & Video Generation Engine"
+                      >
+                        <ProviderLogo provider={activeVisualEngineObj.provider} modelId={activeVisualEngineObj.id} className="w-3.5 h-3.5 text-current shrink-0" />
+                        <span className="truncate max-w-[130px]">
+                          {activeVisualEngineObj.name}
+                        </span>
+                        <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
+                      </button>
+
+                      {showVisualEngineDropdown && (
+                        <div className={`absolute ${messages.length === 0 ? "top-full mt-2" : "bottom-full mb-2"} left-0 w-76 max-h-72 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-2xl py-1 z-50 text-xs font-mono`}>
+                          <div className="p-2 border-b border-black/[0.04] dark:border-white/[0.04]">
+                            <input
+                              type="search"
+                              name="in-chat-visual-engine-search"
+                              autoComplete="off"
+                              autoCorrect="off"
+                              autoCapitalize="off"
+                              spellCheck={false}
+                              data-form-type="other"
+                              data-1p-ignore="true"
+                              data-lpignore="true"
+                              data-bwignore="true"
+                              value={visualEngineSearch}
+                              onChange={(e) => setVisualEngineSearch(e.target.value)}
+                              placeholder="Search media engines..."
+                              className="w-full px-2.5 py-1 text-xs rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-neutral-200 dark:border-neutral-700 outline-hidden font-sans"
+                              autoFocus
+                            />
+                          </div>
+
+                          <div className="py-1">
+                            {filteredVisualEngines.map((eng) => (
+                              <button
+                                key={eng.id}
+                                onClick={() => {
+                                  setActiveVisualEngine(eng.id);
+                                  try {
+                                    localStorage.setItem("easycode_visual_engine", eng.id);
+                                  } catch (e) {}
+                                  setShowVisualEngineDropdown(false);
+                                  toast.success(`Selected ${eng.name} for image/video generation`);
+                                }}
+                                className={`w-full text-left px-3 py-2 transition-colors flex items-center justify-between ${
+                                  activeVisualEngine === eng.id
+                                    ? "bg-black/[0.05] dark:bg-white/[0.08] text-neutral-950 dark:text-white font-semibold"
+                                    : "text-[#524E48] dark:text-[#A8A49D] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <ProviderLogo provider={eng.provider} modelId={eng.id} className="w-3.5 h-3.5 shrink-0 text-current" />
+                                  <div className="flex flex-col">
+                                    <span className="truncate">{eng.name}</span>
+                                    <span className="text-[10px] font-sans opacity-60">{eng.provider} • {eng.badge}</span>
+                                  </div>
+                                </div>
+                                {activeVisualEngine === eng.id && <Check className="w-3.5 h-3.5" />}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Right Action Icons: Mic & Orange Send Button (Matching Image 1) */}
-                  <div className="flex items-center gap-2.5">
+                  {/* Right Action Icons: Mic & Send Button */}
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={() => toast.info("Voice input ready")}
                       className="p-1.5 rounded-lg text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white transition-colors cursor-pointer"

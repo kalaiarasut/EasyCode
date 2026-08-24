@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { performWebSearch } from "@/utils/webSearch";
-import { formatImageMarkdownResponse } from "@/utils/imageGenerator";
+import { formatImageMarkdown, formatVideoMarkdown } from "@/utils/mediaGenerator";
 
 const MODEL_NAME_MAP: Record<string, string> = {
   "gemini-3.6-flash": "Gemini 3.6 Flash",
@@ -43,6 +43,15 @@ const MODEL_NAME_MAP: Record<string, string> = {
   "sonar-reasoning-pro": "Sonar Reasoning Pro",
   "command-r-plus": "Command R+",
   "ollama-local": "Local Ollama",
+  "@cf/meta/llama-3.3-70b-instruct": "Llama 3.3 70B (Cloudflare)",
+  "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b": "DeepSeek R1 Distill 32B (Cloudflare)",
+  "@cf/qwen/qwen2.5-coder-32b-instruct": "Qwen 2.5 Coder 32B (Cloudflare)",
+  "@cf/meta/llama-3.1-8b-instruct": "Llama 3.1 8B (Cloudflare)",
+  "Qwen/Qwen2.5-Coder-32B-Instruct": "Qwen 2.5 Coder 32B (HuggingFace)",
+  "meta-llama/Llama-3.3-70B-Instruct": "Llama 3.3 70B (HuggingFace)",
+  "deepseek-ai/DeepSeek-R1": "DeepSeek R1 (HuggingFace)",
+  "pollinations-flux": "FLUX.1 Schnell (Pollinations)",
+  "pollinations-openai": "Pollinations Multimodal Chat",
 };
 
 // Dynamic resolution using Google ListModels API to guarantee model exists for user's key
@@ -139,7 +148,37 @@ export async function POST(req: NextRequest) {
 
     const lowerQuery = inputMessage.toLowerCase().trim();
 
-    // 1. IMAGE GENERATION HANDLING
+    // 1. VIDEO GENERATION HANDLING
+    const isVideoQuery =
+      lowerQuery.startsWith("/video") ||
+      lowerQuery.startsWith("create video") ||
+      lowerQuery.startsWith("generate video") ||
+      lowerQuery.startsWith("make a video") ||
+      lowerQuery.startsWith("render video");
+
+    if (isVideoQuery) {
+      const cleanPrompt =
+        inputMessage
+          .replace(/^\/video\s*/i, "")
+          .replace(/^create video\s*:?/i, "")
+          .replace(/^generate video\s*:?/i, "")
+          .replace(/^make a video\s*:?/i, "")
+          .replace(/^render video\s*:?/i, "")
+          .trim() || inputMessage;
+
+      const videoMarkdown = formatVideoMarkdown(cleanPrompt, { customKeys });
+      return NextResponse.json(
+        {
+          success: true,
+          output: videoMarkdown,
+          modelUsed: "Motion AI Video Studio",
+          suggestedVerb: "Actualizing",
+        },
+        { status: 200 }
+      );
+    }
+
+    // 2. IMAGE GENERATION HANDLING
     const isImageQuery =
       isImageMode ||
       lowerQuery.startsWith("create image") ||
@@ -154,9 +193,10 @@ export async function POST(req: NextRequest) {
           .replace(/^\/image\s*/i, "")
           .replace(/^create image\s*:?/i, "")
           .replace(/^generate image\s*:?/i, "")
+          .replace(/^draw an image\s*:?/i, "")
           .trim() || inputMessage;
 
-      const imageMarkdown = formatImageMarkdownResponse(cleanPrompt);
+      const imageMarkdown = formatImageMarkdown(cleanPrompt, { customKeys });
       return NextResponse.json(
         {
           success: true,
@@ -310,12 +350,17 @@ ${customInstructions ? `\nUser Custom Instructions:\n${customInstructions}\n` : 
 
 User Prompt: "${inputMessage}"
 
-Instructions:
-1. Provide a direct, authoritative, and helpful response. If the user is just saying hi or asking a general question, greet them warmly and answer directly.
-2. If the user asks for a problem, generate full problem details (title, difficulty, description, examples, constraints, optimal algorithm intuition, and starter code stub).
-3. If the user asks for code or a solution, provide clean, idiomatic, fully-commented code in markdown fenced blocks with explicit language tags (e.g. \`\`\`python, \`\`\`typescript, \`\`\`cpp).
-4. If the user asks to debug or review code, point out exact edge cases, bounds issues, or bottlenecks with concrete fixes.
-5. Format mathematical equations with standard KaTeX notation ($...$ inline or $$...$$ display) where appropriate.`;
+CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
+1. When generating or completing code for algorithmic problems:
+   - Output ONLY the clean \`class Solution:\` (or equivalent solution structure) containing the algorithm method.
+   - STRICTLY FORBIDDEN: Do NOT include \`if __name__ == "__main__":\` driver code, test execution harnesses, or \`print(...)\` statements.
+   - STRICTLY FORBIDDEN: Do NOT include verbose docstrings (e.g. \`\"\"\"\nCalculates...\n:param prices:...\n:return:...\n\"\"\"\`) inside methods. Keep code lean and professional.
+   - Use concise single-line comments (\`# ...\`) only where necessary to clarify algorithmic state transitions.
+   - The code must be immediately ready for direct insertion into the Monaco Editor and direct execution in Judge0.
+2. If the user asks for code or a solution, provide clean, idiomatic code in markdown fenced blocks with explicit language tags (e.g. \`\`\`python, \`\`\`typescript, \`\`\`cpp).
+3. If the user asks to debug or review code, point out exact edge cases, bounds issues, or bottlenecks with concrete fixes.
+4. Format mathematical expressions cleanly (e.g. O(N) time, O(1) space, array indices like prices[i], bounds like 0 <= i < n). Avoid raw unparsed LaTeX math markup.
+5. INTERACTIVE FLOWCHARTS & SYSTEM DIAGRAMS: When the user asks for a flowchart, logic diagram, state transition, sequence diagram, architecture overview, or algorithmic decision tree (or uses \`/flowchart\` / \`/diagram\` or \`@flowchart\`), ALWAYS generate a complete, valid Mermaid diagram wrapped in \`\`\`mermaid ... \`\`\` fenced code blocks. Use modern directional flowcharts (\`flowchart TD\` or \`flowchart LR\`) with concise labels, decision diamonds (\`{...}\`), and clear connection paths (\`-->|condition|\`).`;
 
     // STREAMING SSE RESPONSE (When stream === true)
     if (stream) {
@@ -388,7 +433,20 @@ Instructions:
                   }
                 } else {
                   const errData = await restRes.json().catch(() => ({}));
-                  throw new Error(errData?.error?.message || sdkErr?.message || `Google API error ${restRes.status}`);
+                  const rawErrMsg = errData?.error?.message || sdkErr?.message || `Google API error ${restRes.status}`;
+                  const isRateLimit = restRes.status === 429 || rawErrMsg.includes("RESOURCE_EXHAUSTED") || rawErrMsg.includes("quota");
+                  if (isRateLimit) {
+                    if (!customKeys.gemini) {
+                      throw new Error(
+                        "⚠️ EasyCode's shared Gemini free access is experiencing high traffic / rate limits. You can paste your own free Gemini API key in Settings -> API Keys for uninterrupted dedicated access, or retry in a few seconds."
+                      );
+                    } else {
+                      throw new Error(
+                        "⚠️ Your custom Gemini API key hit a rate limit or quota constraint from Google AI Studio. Please check your quota in Google AI Studio or try again shortly."
+                      );
+                    }
+                  }
+                  throw new Error(rawErrMsg);
                 }
               }
 
@@ -507,6 +565,23 @@ Instructions:
                 endpoint = "http://localhost:11434/v1/chat/completions";
                 apiKey = "ollama";
                 openAiModel = "llama3";
+              } else if (targetModel.startsWith("@cf/") || targetModel.includes("cloudflare")) {
+                const cfToken = customKeys.cloudflare || process.env.CLOUDFLARE_API_TOKEN;
+                const cfAccountId = customKeys.cloudflareAccountId || process.env.CLOUDFLARE_ACCOUNT_ID;
+                if (!cfToken || !cfAccountId) {
+                  throw new Error("Cloudflare API Token & Account ID are required. Please configure both in Settings.");
+                }
+                endpoint = `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/v1/chat/completions`;
+                apiKey = cfToken;
+                openAiModel = targetModel.startsWith("@cf/") ? targetModel : "@cf/meta/llama-3.3-70b-instruct";
+              } else if (targetModel.startsWith("Qwen/") || targetModel.startsWith("meta-llama/") || targetModel.startsWith("deepseek-ai/")) {
+                endpoint = "https://router.huggingface.co/hf-inference/v1/chat/completions";
+                apiKey = customKeys.huggingface || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+                openAiModel = targetModel;
+              } else if (targetModel.startsWith("pollinations")) {
+                endpoint = "https://text.pollinations.ai/openai/chat/completions";
+                apiKey = customKeys.pollinations || process.env.POLLINATIONS_API_KEY || "dummy";
+                openAiModel = "openai";
               }
 
               if (!apiKey || apiKey.trim().length < 5) {

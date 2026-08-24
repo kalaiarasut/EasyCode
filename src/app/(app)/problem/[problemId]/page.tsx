@@ -18,7 +18,7 @@ import { ApiResponse, codeSubmissionResultType, Judge0SubmissionResult } from '@
 import { IProblem } from '@/models/Problem';
 import { Skeleton } from "@/components/ui/skeleton";
 import ProblemPageDescription from '@/components/ProblemPageDescription';
-import ProblemPageCodeEditor from '@/components/ProblemPageCodeEditor';
+import ProblemPageCodeEditor, { codingLanguages } from '@/components/ProblemPageCodeEditor';
 import { useTheme } from 'next-themes';
 import { useSession } from 'next-auth/react';
 import { codeRunValidation } from '@/schemas/codeRunSchema';
@@ -71,11 +71,11 @@ export default function ProblemPage() {
     ]
   };
 
-  const [problemInfo, setProblemInfo] = useState<any>(fallbackProblem);
+  const [problemInfo, setProblemInfo] = useState<any>(null);
   const [allProblemIds, setAllProblemIds] = useState<string[]>([]);
   const [sourceCode, setSourceCode] = useState<string>("");
-  const [selectedLanguage, setSelectedLanguage] = useState<string>("C++");
-  const [selectedLanguageCode, setSelectedLanguageCode] = useState<number>(54);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>("Python");
+  const [selectedLanguageCode, setSelectedLanguageCode] = useState<number>(71);
   const [isCodeRunning, setIsCodeRunning] = useState<boolean>(false);
   const [isSubmitLoading, setIsSubmitLoading] = useState<boolean>(false);
   const [currentTab, setCurrentTab] = useState<string>("description");
@@ -121,6 +121,17 @@ export default function ProblemPage() {
 
   useEffect(() => {
     setMounted(true);
+    // Read preferred language from settings (defaults to Python)
+    try {
+      const savedLang = localStorage.getItem("easycode_pref_lang");
+      if (savedLang) {
+        setSelectedLanguage(savedLang);
+        const langConfig = (codingLanguages as any)[savedLang];
+        if (langConfig?.apiId) {
+          setSelectedLanguageCode(langConfig.apiId);
+        }
+      }
+    } catch (e) {}
   }, []);
 
   // Fetch all problem IDs for next/prev/random navigation
@@ -192,6 +203,29 @@ export default function ProblemPage() {
           const data = await res.json();
           if (data.success && data.problem) {
             setLiveGeneratedProblem(data.problem);
+            // Synchronize starter code stub to editor automatically for the preferred language
+            if (data.problem.starterCode) {
+              const currentLang = localStorage.getItem("easycode_pref_lang") || selectedLanguage || "Python";
+              const lowerLang = currentLang.toLowerCase();
+              const codeKey = lowerLang.includes("python")
+                ? "python"
+                : lowerLang.includes("c++") || lowerLang.includes("cpp")
+                ? "cpp"
+                : lowerLang.includes("java") && !lowerLang.includes("script")
+                ? "java"
+                : lowerLang.includes("type")
+                ? "typescript"
+                : "javascript";
+
+              const matchedCode =
+                (data.problem.starterCode as any)[codeKey] ||
+                data.problem.starterCode.python ||
+                data.problem.starterCode.cpp ||
+                "";
+              if (matchedCode) {
+                setSourceCode(matchedCode);
+              }
+            }
           } else {
             toast.error(data.message || "Failed to generate problem specification");
           }
@@ -223,19 +257,14 @@ export default function ProblemPage() {
       try {
         const parsedData = mongodbObjectId.safeParse(problemId);
         if (!parsedData.success) {
-          console.error("Invalid Problem Id: ", problemId);
-          toast.error("Invalid Problem Id");
+          setProblemInfo(fallbackProblem);
           return;
         }
 
         const res = await axios.get<ApiResponse>(`/api/problem/get-problem?problemId=${problemId}`);
-        setProblemInfo(res.data.problem || null);
+        setProblemInfo(res.data.problem || fallbackProblem);
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response) {
-          toast.error(error.response.data.message || "Failed to load problem");
-        } else {
-          toast.error("Error while fetching problem");
-        }
+        setProblemInfo(fallbackProblem);
       }
     };
 
@@ -520,7 +549,10 @@ export default function ProblemPage() {
                     codeOutput={codeOutput}
                     isCodeRunning={isCodeRunning}
                     theme={theme}
-                    problemInfo={problemInfo}
+                    problemInfo={problemInfo || (liveGeneratedProblem ? {
+                      ...liveGeneratedProblem,
+                      testCases: liveGeneratedProblem.testCases?.visible || liveGeneratedProblem.testCases || [],
+                    } as any : null)}
                     session={session}
                     submissionOutput={submissionOutput}
                     setSubmissionOutput={setSubmissionOutput}

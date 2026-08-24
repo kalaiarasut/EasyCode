@@ -34,6 +34,8 @@ import {
   Terminal,
   Eye,
   EyeOff,
+  Film,
+  Network,
 } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
@@ -41,6 +43,9 @@ import { ApiResponse } from "@/types/ApiResponse";
 import Link from "next/link";
 import { ProviderLogo } from "@/components/common/ProviderLogos";
 import { computeLineDiff, DiffResult } from "@/utils/diffHelper";
+import { ALL_VISUAL_ENGINES, VisualEngineItem } from "@/utils/mediaGenerator";
+import AiMediaCard from "@/components/common/AiMediaCard";
+import MermaidFlowchartViewer from "@/components/common/MermaidFlowchartViewer";
 
 interface ProblemPageAiTabProps {
   sourceCode: string;
@@ -135,7 +140,22 @@ const ALL_POSSIBLE_MODELS: ModelItem[] = [
   { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro", provider: "Perplexity", badge: "Live Search", requiredKey: "perplexity", category: "Search" },
   { id: "command-r-plus", name: "Command R+", provider: "Cohere", badge: "Enterprise", requiredKey: "cohere", category: "Frontier" },
 
-  // 12. Local Ollama
+  // 12. Cloudflare Workers AI Gateway
+  { id: "@cf/meta/llama-3.3-70b-instruct", name: "Llama 3.3 70B", provider: "Cloudflare", badge: "Edge SOTA", requiredKey: "cloudflare", category: "Speed" },
+  { id: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", name: "DeepSeek R1 Distill 32B", provider: "Cloudflare", badge: "Reasoning", requiredKey: "cloudflare", category: "Reasoning" },
+  { id: "@cf/qwen/qwen2.5-coder-32b-instruct", name: "Qwen 2.5 Coder 32B", provider: "Cloudflare", badge: "Coding", requiredKey: "cloudflare", category: "Coding" },
+  { id: "@cf/meta/llama-3.1-8b-instruct", name: "Llama 3.1 8B", provider: "Cloudflare", badge: "Instant", requiredKey: "cloudflare", category: "Speed" },
+
+  // 13. Hugging Face
+  { id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B", provider: "Hugging Face", badge: "Top Coder", requiredKey: "huggingface", category: "Coding" },
+  { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B", provider: "Hugging Face", badge: "Open SOTA", requiredKey: "huggingface", category: "Frontier" },
+  { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1", provider: "Hugging Face", badge: "Reasoning", requiredKey: "huggingface", category: "Reasoning" },
+
+  // 14. Pollinations.ai
+  { id: "pollinations-flux", name: "FLUX.1 Schnell", provider: "Pollinations.ai", badge: "Visual SOTA", requiredKey: "pollinations", category: "Universal" },
+  { id: "pollinations-openai", name: "Pollinations Multimodal Chat", provider: "Pollinations.ai", badge: "Free Gateway", requiredKey: "pollinations", category: "Universal" },
+
+  // 15. Local Ollama
   { id: "ollama-local", name: "Local Ollama Host", provider: "Local", badge: "100% Private", requiredKey: "ollamaUrl", category: "Local" },
 ];
 
@@ -163,6 +183,44 @@ export default function ProblemPageAiTab({
   const [modelSearch, setModelSearch] = useState<string>("");
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [rateLimitedModels, setRateLimitedModels] = useState<Set<string>>(new Set());
+  const [serverHostedKeys, setServerHostedKeys] = useState<Record<string, boolean>>({});
+
+  // Visual / Media Engine State
+  const [selectedVisualEngine, setSelectedVisualEngine] = useState<string>(() => {
+    try {
+      return localStorage.getItem("easycode_visual_engine") || "pollinations-flux";
+    } catch (e) {
+      return "pollinations-flux";
+    }
+  });
+  const [showVisualEngineDropdown, setShowVisualEngineDropdown] = useState<boolean>(false);
+  const [visualEngineSearch, setVisualEngineSearch] = useState<string>("");
+  const visualEngineDropdownRef = useRef<HTMLDivElement>(null);
+
+  const currentVisualEngineMeta = useMemo(() => {
+    return ALL_VISUAL_ENGINES.find((e) => e.id === selectedVisualEngine) || ALL_VISUAL_ENGINES[0];
+  }, [selectedVisualEngine]);
+
+  const filteredVisualEngines = useMemo(() => {
+    if (!visualEngineSearch.trim()) return ALL_VISUAL_ENGINES;
+    const q = visualEngineSearch.toLowerCase();
+    return ALL_VISUAL_ENGINES.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        e.id.toLowerCase().includes(q) ||
+        e.provider.toLowerCase().includes(q) ||
+        e.badge.toLowerCase().includes(q)
+    );
+  }, [visualEngineSearch]);
+
+  useEffect(() => {
+    fetch("/api/user/keys")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.serverHostedKeys) setServerHostedKeys(d.serverHostedKeys);
+      })
+      .catch(() => {});
+  }, []);
 
   // Uploaded Documents State
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDoc[]>([]);
@@ -247,7 +305,7 @@ export default function ProblemPageAiTab({
     };
   }, [isSubmitting]);
 
-  // Load custom API keys from localStorage
+  // Load API Keys from Local Storage
   useEffect(() => {
     try {
       const savedKeys = localStorage.getItem("easycode_custom_keys");
@@ -256,6 +314,32 @@ export default function ProblemPageAiTab({
       }
     } catch (e) {}
   }, []);
+
+  // Claudionary Model State Thinking Engine
+  const [thinkingCluster, setThinkingCluster] = useState<string>("cognition");
+  const [thinkingVerb, setThinkingVerb] = useState<string>("Analyzing");
+  const [thinkingDotIdx, setThinkingDotIdx] = useState<number>(0);
+  const [thinkingPhase, setThinkingPhase] = useState<"ingestion" | "reasoning" | "synthesis">("reasoning");
+
+  // Dynamic Thinking Animation Cycle
+  useEffect(() => {
+    if (!isSubmitting) return;
+
+    const dotInterval = setInterval(() => {
+      setThinkingDotIdx((prev) => (prev + 1) % DOT_SEQUENCE.length);
+    }, 400);
+
+    const verbInterval = setInterval(() => {
+      const verbs = MODEL_STATE_CLUSTERS[thinkingCluster as keyof typeof MODEL_STATE_CLUSTERS] || MODEL_STATE_CLUSTERS.cognition;
+      const nextVerb = verbs[Math.floor(Math.random() * verbs.length)];
+      setThinkingVerb(nextVerb);
+    }, 1800);
+
+    return () => {
+      clearInterval(dotInterval);
+      clearInterval(verbInterval);
+    };
+  }, [isSubmitting, thinkingCluster]);
 
   const [verifiedModelsByProvider, setVerifiedModelsByProvider] = useState<Record<string, string[]>>({});
 
@@ -283,7 +367,9 @@ export default function ProblemPageAiTab({
     if (!model.requiredKey) return false;
 
     const keyVal = apiKeys[model.requiredKey];
-    if (!keyVal || typeof keyVal !== "string" || keyVal.trim().length <= 5) {
+    const isHosted = Boolean(serverHostedKeys[model.requiredKey]);
+    const hasValidKey = Boolean((keyVal && typeof keyVal === "string" && keyVal.trim().length > 5) || isHosted);
+    if (!hasValidKey) {
       return false;
     }
 
@@ -302,13 +388,16 @@ export default function ProblemPageAiTab({
   // Filter ONLY available models with valid saved keys that haven't hit rate limits
   const availableModels = useMemo(() => {
     return ALL_POSSIBLE_MODELS.filter((m) => isModelValidAndAvailable(m));
-  }, [apiKeys, rateLimitedModels, verifiedModelsByProvider]);
+  }, [apiKeys, serverHostedKeys, rateLimitedModels, verifiedModelsByProvider]);
 
-  // Close model dropdown on outside click
+  // Close model dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
         setShowModelDropdown(false);
+      }
+      if (visualEngineDropdownRef.current && !visualEngineDropdownRef.current.contains(e.target as Node)) {
+        setShowVisualEngineDropdown(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -486,6 +575,9 @@ export default function ProblemPageAiTab({
       },
     ]);
     setIsSubmitting(true);
+    window.dispatchEvent(new CustomEvent("easycode-agent-status-change", {
+      detail: { isGenerating: true, verb: "Thinking", isAgentMode },
+    }));
 
     try {
       const response = await fetch("/api/code/chat-output", {
@@ -522,6 +614,9 @@ export default function ProblemPageAiTab({
                 const event = JSON.parse(dataStr);
                 if (event.type === "thinking_stage" && event.verb) {
                   setCurrentVerb(event.verb);
+                  window.dispatchEvent(new CustomEvent("easycode-agent-status-change", {
+                    detail: { isGenerating: true, verb: event.verb, isAgentMode },
+                  }));
                 } else if (event.type === "chunk" && event.text) {
                   accumulatedText += event.text;
                   setChats((prev) => {
@@ -549,8 +644,9 @@ export default function ProblemPageAiTab({
                   const codeBlockMatch = finalOutput.match(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/);
                   if (codeBlockMatch) {
                     const extractedLang = codeBlockMatch[1] || "code";
-                    const extractedCode = codeBlockMatch[2].trim();
-                    const diff = computeLineDiff(sourceCode || "", extractedCode);
+                    const extractedCode = sanitizeLeetCodeSnippet(codeBlockMatch[2].trim());
+                    const currentOriginalCode = sourceCodeRef.current || sourceCode || "";
+                    const diff = computeLineDiff(currentOriginalCode, extractedCode);
 
                     if (diff.hasChanges) {
                       if (isAgentMode) {
@@ -564,7 +660,7 @@ export default function ProblemPageAiTab({
                               addedLineIndices: diff.addedLineIndices,
                               additions: diff.additions,
                               deletions: diff.deletions,
-                              oldCode: sourceCode || "",
+                              oldCode: currentOriginalCode,
                               newCode: extractedCode,
                               diff: diff,
                             },
@@ -577,7 +673,7 @@ export default function ProblemPageAiTab({
                           code: extractedCode,
                           language: extractedLang,
                           diff,
-                          originalCode: sourceCode || "",
+                          originalCode: currentOriginalCode,
                         });
                         toast.info(`Review Mode: Proposed changes (+${diff.additions} -${diff.deletions} lines). Review above input.`);
                       }
@@ -622,7 +718,22 @@ export default function ProblemPageAiTab({
     } finally {
       setIsSubmitting(false);
       abortControllerRef.current = null;
+      window.dispatchEvent(new CustomEvent("easycode-agent-status-change", {
+        detail: { isGenerating: false, isAgentMode },
+      }));
     }
+  };
+
+  const sanitizeLeetCodeSnippet = (rawCode: string): string => {
+    if (!rawCode) return "";
+    let code = rawCode;
+    // Strip if __name__ == "__main__": and following driver/verification block
+    code = code.replace(/#\s*---\s*Verification[\s\S]*$/i, "");
+    code = code.replace(/if\s+__name__\s*==\s*['"]__main__['"]\s*:[\s\S]*$/i, "");
+    // Strip verbose parameter docstring blocks
+    code = code.replace(/"""[\s\S]*?:param[\s\S]*?:return[\s\S]*?"""/g, "");
+    code = code.replace(/'''[\s\S]*?:param[\s\S]*?:return[\s\S]*?'''/g, "");
+    return code.trim();
   };
 
   const handleCancelGeneration = () => {
@@ -646,12 +757,13 @@ export default function ProblemPageAiTab({
   };
 
   const handleApplyCodeSnippet = (code: string, blockId: string) => {
+    const cleanCode = sanitizeLeetCodeSnippet(code);
     if (onApplyCode) {
-      onApplyCode(code);
+      onApplyCode(cleanCode);
       setAppliedCodeId(blockId);
       setTimeout(() => setAppliedCodeId(null), 2500);
     } else {
-      navigator.clipboard.writeText(code);
+      navigator.clipboard.writeText(cleanCode);
       toast.success("Code copied (ready to paste in editor)");
     }
   };
@@ -703,6 +815,17 @@ export default function ProblemPageAiTab({
       <div className="space-y-3 font-sans">
         {parts.map((part, idx) => {
           if (part.type === "code" && part.code) {
+            // Check for Mermaid Flowchart / Diagram
+            if (part.lang?.toLowerCase() === "mermaid") {
+              return (
+                <MermaidFlowchartViewer
+                  key={idx}
+                  chart={part.code}
+                  title="Algorithmic Decision Flowchart"
+                />
+              );
+            }
+
             const isApplied = appliedCodeId === part.id;
             const isCopied = copiedId === part.id;
             return (
@@ -766,61 +889,78 @@ export default function ProblemPageAiTab({
             );
           }
 
-          // Clean Free-Flowing Prose (No box / card wrapper!)
-          return (
-            <div key={idx} className="space-y-2 text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">
-              {part.text?.split("\n").map((line, lineIdx) => {
-                if (!line.trim()) return <div key={lineIdx} className="h-1.5" />;
-
-                // Bullet item
-                if (line.trim().startsWith("•") || line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
-                  const cleanText = line.trim().replace(/^[•\-\*]\s*/, "");
-                  return (
-                    <div key={lineIdx} className="flex items-start gap-2.5 pl-1 my-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 dark:bg-neutral-500 mt-2 shrink-0" />
-                      <span className="flex-1">{formatInlineSpans(cleanText)}</span>
-                    </div>
-                  );
-                }
-
-                // Numbered item
-                const numMatch = line.trim().match(/^(\d+)\.\s*(.+)/);
-                if (numMatch) {
-                  return (
-                    <div key={lineIdx} className="flex items-start gap-2.5 pl-1 my-1">
-                      <span className="font-mono text-xs font-semibold text-neutral-500 shrink-0 mt-0.5">
-                        {numMatch[1]}.
-                      </span>
-                      <span className="flex-1">{formatInlineSpans(numMatch[2])}</span>
-                    </div>
-                  );
-                }
-
-                return <p key={lineIdx}>{formatInlineSpans(line)}</p>;
-              })}
-            </div>
-          );
+          // Clean Free-Flowing Prose with markdown and LaTeX math
+          return renderProseBlock(part.text || "", idx);
         })}
       </div>
     );
   };
+  const sourceCodeRef = useRef(sourceCode);
+  useEffect(() => {
+    sourceCodeRef.current = sourceCode;
+  }, [sourceCode]);
+
+  // Clean LaTeX and math markup in Ask AI responses
+  const cleanAiLatexMath = (raw: string): string => {
+    if (!raw) return "";
+    return raw
+      .replace(/\\mathcal\{O\}\(([^)]+)\)/g, "O($1)")
+      .replace(/\\mathcal\{O\}/g, "O")
+      .replace(/\\text\{([^}]+)\}/g, "$1")
+      .replace(/\\mathrm\{([^}]+)\}/g, "$1")
+      .replace(/\\mathbf\{([^}]+)\}/g, "$1")
+      .replace(/\\max/g, "max")
+      .replace(/\\min/g, "min")
+      .replace(/\\times/g, " * ")
+      .replace(/\\cdot/g, " * ")
+      .replace(/\\le/g, "<=")
+      .replace(/\\ge/g, ">=")
+      .replace(/\\ne/g, "!=")
+      .replace(/\\to/g, "->")
+      .replace(/\\in/g, " in ")
+      .replace(/\\alpha/g, "alpha")
+      .replace(/\\beta/g, "beta")
+      .replace(/\\gamma/g, "gamma")
+      .replace(/\\epsilon/g, "epsilon")
+      .replace(/\\Delta/g, "delta")
+      .replace(/\\approx/g, "≈")
+      .replace(/\\quad/g, " ")
+      .replace(/\\qquad/g, "  ")
+      .replace(/\\_/g, "_");
+  };
+
+  const cleanAiMathFormula = (math: string): string => {
+    let cleaned = cleanAiLatexMath(math)
+      .replace(/_\{([^}]+)\}/g, "[$1]")
+      .replace(/_([a-zA-Z0-9])/g, "[$1]")
+      .replace(/\^\{([^}]+)\}/g, "^$1")
+      .trim();
+    return `\`${cleaned}\``;
+  };
 
   const formatInlineSpans = (text: string) => {
-    const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+    let cleaned = cleanAiLatexMath(text);
+    // Replace inline $...$ with code formatted math
+    cleaned = cleaned.replace(/\$([^$\n]+)\$/g, (_, m) => cleanAiMathFormula(m));
+
+    const parts = cleaned.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g);
 
     return parts.map((part, i) => {
       if (part.startsWith("**") && part.endsWith("**")) {
         return (
-          <strong key={i} className="font-semibold text-neutral-950 dark:text-white">
+          <strong key={i} className="font-bold text-neutral-950 dark:text-white">
             {part.slice(2, -2)}
           </strong>
         );
+      }
+      if (part.startsWith("*") && part.endsWith("*")) {
+        return <em key={i}>{part.slice(1, -1)}</em>;
       }
       if (part.startsWith("`") && part.endsWith("`")) {
         return (
           <code
             key={i}
-            className="px-1.5 py-0.5 mx-0.5 rounded bg-black/[0.05] dark:bg-white/[0.08] font-mono text-xs text-neutral-900 dark:text-neutral-100 border border-black/[0.04] dark:border-white/[0.06]"
+            className="px-1.5 py-0.5 mx-0.5 rounded bg-black/[0.05] dark:bg-white/[0.08] font-mono text-[12px] text-neutral-900 dark:text-neutral-100 border border-black/[0.04] dark:border-white/[0.06]"
           >
             {part.slice(1, -1)}
           </code>
@@ -828,6 +968,227 @@ export default function ProblemPageAiTab({
       }
       return <React.Fragment key={i}>{part}</React.Fragment>;
     });
+  };
+
+  // Render markdown table rows into a clean responsive table
+  const renderMarkdownTable = (lines: string[], keyIdx: number) => {
+    const headerLine = lines[0];
+    const bodyLines = lines.slice(2); // Skip header and separator
+
+    const parseRow = (row: string) =>
+      row
+        .split("|")
+        .map((c) => c.trim())
+        .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+
+    const headers = parseRow(headerLine);
+
+    return (
+      <div key={keyIdx} className="my-3 overflow-x-auto rounded-xl border border-black/[0.08] dark:border-white/[0.08] bg-black/[0.01] dark:bg-white/[0.01]">
+        <table className="w-full text-left text-xs font-mono">
+          <thead className="bg-black/[0.03] dark:bg-white/[0.03] border-b border-black/[0.08] dark:border-white/[0.08] font-sans font-semibold text-neutral-800 dark:text-neutral-200">
+            <tr>
+              {headers.map((h, i) => (
+                <th key={i} className="px-3 py-2 text-xs">
+                  {formatInlineSpans(h)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-black/[0.04] dark:divide-white/[0.04]">
+            {bodyLines.map((row, rIdx) => {
+              const cells = parseRow(row);
+              return (
+                <tr key={rIdx} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+                  {cells.map((cell, cIdx) => (
+                    <td key={cIdx} className="px-3 py-2 text-neutral-700 dark:text-neutral-300 font-sans text-xs">
+                      {formatInlineSpans(cell)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  // Render Prose Block with headers, math blocks, lists, and tables
+  const renderProseBlock = (text: string, blockIdx: number) => {
+    const rawLines = text.split("\n");
+    const elements: React.ReactNode[] = [];
+    let i = 0;
+
+    while (i < rawLines.length) {
+      const line = rawLines[i];
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        elements.push(<div key={`space-${i}`} className="h-1" />);
+        i++;
+        continue;
+      }
+
+      // Check for Video Media block (@[video](...))
+      const videoMatch = trimmed.match(/@\[video\]\(([^)]+)\)/);
+      if (videoMatch) {
+        const fullUrl = videoMatch[1];
+        const [cleanUrl, hashParams] = fullUrl.split("#");
+        const params = new URLSearchParams(hashParams || "");
+        const poster = params.get("poster") || undefined;
+        const aspect = (params.get("aspect") as any) || "16:9";
+        const model = params.get("model") || "Motion AI Video Studio";
+        const videoPrompt = params.get("prompt") || "AI Generated Video";
+
+        elements.push(
+          <AiMediaCard
+            key={`video-${i}`}
+            type="video"
+            src={cleanUrl}
+            poster={poster}
+            prompt={videoPrompt}
+            model={model}
+            aspectRatio={aspect}
+          />
+        );
+        i++;
+        continue;
+      }
+
+      // Check for Image Media block (![alt](...))
+      const imageMatch = trimmed.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+      if (imageMatch) {
+        const alt = imageMatch[1] || "AI Generated Visual";
+        const fullUrl = imageMatch[2];
+        const [cleanUrl, hashParams] = fullUrl.split("#");
+        const params = new URLSearchParams(hashParams || "");
+        const aspect = (params.get("aspect") as any) || "1:1";
+        const model = params.get("model") || "Vision AI Image Studio";
+
+        elements.push(
+          <AiMediaCard
+            key={`img-${i}`}
+            type="image"
+            src={cleanUrl}
+            prompt={alt}
+            alt={alt}
+            model={model}
+            aspectRatio={aspect}
+          />
+        );
+        i++;
+        continue;
+      }
+
+      // Check for Markdown Table (at least 3 lines with |)
+      if (
+        trimmed.startsWith("|") &&
+        trimmed.endsWith("|") &&
+        i + 1 < rawLines.length &&
+        rawLines[i + 1].trim().includes("---")
+      ) {
+        const tableLines: string[] = [];
+        while (i < rawLines.length && rawLines[i].trim().startsWith("|")) {
+          tableLines.push(rawLines[i]);
+          i++;
+        }
+        elements.push(renderMarkdownTable(tableLines, i));
+        continue;
+      }
+
+      // Horizontal Rule
+      if (trimmed === "---" || trimmed === "***" || trimmed === "___") {
+        elements.push(<hr key={`hr-${i}`} className="my-3 border-black/[0.08] dark:border-white/[0.08]" />);
+        i++;
+        continue;
+      }
+
+      // Display Math block ($$ ... $$)
+      if (trimmed.startsWith("$$") && trimmed.endsWith("$$")) {
+        const formula = trimmed.slice(2, -2).trim();
+        elements.push(
+          <div
+            key={`math-${i}`}
+            className="my-2.5 p-2.5 rounded-lg bg-black/[0.03] dark:bg-white/[0.04] font-mono text-xs text-neutral-800 dark:text-neutral-200 border border-black/[0.05] dark:border-white/[0.06] overflow-x-auto leading-relaxed"
+          >
+            {cleanAiLatexMath(formula)}
+          </div>
+        );
+        i++;
+        continue;
+      }
+
+      // H3 Header (### ...)
+      if (trimmed.startsWith("### ")) {
+        elements.push(
+          <h3
+            key={`h3-${i}`}
+            className="text-[14px] font-bold text-neutral-950 dark:text-neutral-50 pt-2 pb-0.5 tracking-tight font-sans"
+          >
+            {formatInlineSpans(trimmed.replace(/^###\s+/, ""))}
+          </h3>
+        );
+        i++;
+        continue;
+      }
+
+      // H4 Header (#### ...)
+      if (trimmed.startsWith("#### ")) {
+        elements.push(
+          <h4
+            key={`h4-${i}`}
+            className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100 pt-1.5 pb-0.5 font-sans"
+          >
+            {formatInlineSpans(trimmed.replace(/^####\s+/, ""))}
+          </h4>
+        );
+        i++;
+        continue;
+      }
+
+      // Bullet item
+      if (trimmed.startsWith("•") || trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+        const cleanText = trimmed.replace(/^[•\-\*]\s*/, "");
+        elements.push(
+          <div key={`bullet-${i}`} className="flex items-start gap-2 pl-1 my-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 dark:bg-neutral-500 mt-2 shrink-0" />
+            <span className="flex-1 text-sm leading-relaxed">{formatInlineSpans(cleanText)}</span>
+          </div>
+        );
+        i++;
+        continue;
+      }
+
+      // Numbered item
+      const numMatch = trimmed.match(/^(\d+)\.\s*(.+)/);
+      if (numMatch) {
+        elements.push(
+          <div key={`num-${i}`} className="flex items-start gap-2 pl-1 my-1">
+            <span className="font-mono text-xs font-semibold text-neutral-500 shrink-0 mt-0.5">
+              {numMatch[1]}.
+            </span>
+            <span className="flex-1 text-sm leading-relaxed">{formatInlineSpans(numMatch[2])}</span>
+          </div>
+        );
+        i++;
+        continue;
+      }
+
+      // Standard prose line
+      elements.push(
+        <p key={`p-${i}`} className="text-sm leading-relaxed text-neutral-800 dark:text-neutral-200 font-sans">
+          {formatInlineSpans(line)}
+        </p>
+      );
+      i++;
+    }
+
+    return (
+      <div key={blockIdx} className="space-y-1.5">
+        {elements}
+      </div>
+    );
   };
 
   return (
@@ -882,119 +1243,192 @@ export default function ProblemPageAiTab({
 
       {/* Top Model Switcher & Control Bar with Company Logos */}
       <div className="h-10 px-3 border-b border-black/[0.06] dark:border-white/[0.06] flex items-center justify-between bg-black/[0.02] dark:bg-white/[0.02] shrink-0">
-        {/* Model Selector Dropdown with Provider Logo */}
-        <div className="relative" ref={modelDropdownRef}>
-          <button
-            onClick={() => setShowModelDropdown((prev) => !prev)}
-            className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white dark:bg-[#201f1d] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.1] text-xs font-medium text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer shadow-2xs"
-          >
-            <ProviderLogo provider={currentModelMeta.provider} modelId={selectedModel} className="w-3.5 h-3.5 text-neutral-700 dark:text-neutral-300" />
-            <span className="truncate max-w-[140px]">{currentModelMeta.name}</span>
-            <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
-          </button>
+        <div className="flex items-center gap-2">
+          {/* Model Selector Dropdown with Provider Logo */}
+          <div className="relative" ref={modelDropdownRef}>
+            <button
+              onClick={() => setShowModelDropdown((prev) => !prev)}
+              className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white dark:bg-[#201f1d] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.1] text-xs font-medium text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer shadow-2xs"
+            >
+              <ProviderLogo provider={currentModelMeta.provider} modelId={selectedModel} className="w-3.5 h-3.5 text-neutral-700 dark:text-neutral-300" />
+              <span className="truncate max-w-[140px]">{currentModelMeta.name}</span>
+              <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
+            </button>
 
-          {/* Model Switcher Menu */}
-          {showModelDropdown && (
-            <div className="absolute left-0 top-full mt-1.5 w-72 rounded-xl bg-white dark:bg-[#222222] border border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 overflow-hidden">
-              <div className="p-2 border-b border-black/[0.06] dark:border-white/[0.06]">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" />
-                  <input
-                    type="text"
-                    value={modelSearch}
-                    onChange={(e) => setModelSearch(e.target.value)}
-                    placeholder="Search available models..."
-                    className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] outline-hidden text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400"
-                    autoFocus
-                  />
-                </div>
-              </div>
-
-              <div className="max-h-60 overflow-y-auto p-1.5 space-y-0.5">
-                <button
-                  onClick={() => {
-                    setSelectedModel("auto");
-                    setShowModelDropdown(false);
-                    toast.success("Enabled Auto Smart Model Routing");
-                  }}
-                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
-                    selectedModel === "auto"
-                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
-                      : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    <Sparkles className="w-3.5 h-3.5 text-current opacity-80" />
-                    <span className="font-semibold">Auto</span>
-                    <span className="text-[10px] text-neutral-400 font-normal truncate">(Smart Prompt Routing)</span>
+            {/* Model Switcher Menu */}
+            {showModelDropdown && (
+              <div className="absolute left-0 top-full mt-1.5 w-72 rounded-xl bg-white dark:bg-[#222222] border border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-black/[0.06] dark:border-white/[0.06]">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" />
+                    <input
+                      type="text"
+                      value={modelSearch}
+                      onChange={(e) => setModelSearch(e.target.value)}
+                      placeholder="Search available models..."
+                      className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] outline-hidden text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400"
+                      autoFocus
+                    />
                   </div>
-                  <span
-                    className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
+                </div>
+
+                <div className="max-h-60 overflow-y-auto p-1.5 space-y-0.5">
+                  <button
+                    onClick={() => {
+                      setSelectedModel("auto");
+                      setShowModelDropdown(false);
+                      toast.success("Enabled Auto Smart Model Routing");
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
                       selectedModel === "auto"
-                        ? "bg-white/20 dark:bg-black/20 text-current"
-                        : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                        ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
+                        : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
                     }`}
                   >
-                    Recommended
-                  </span>
-                </button>
-
-                {filteredModels.map((m) => {
-                  const isSelected = m.id === selectedModel;
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => {
-                        setSelectedModel(m.id);
-                        setShowModelDropdown(false);
-                        toast.success(`Switched model to ${m.name}`);
-                      }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
-                        isSelected
-                          ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
-                          : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
+                    <div className="flex items-center gap-2 truncate">
+                      <Sparkles className="w-3.5 h-3.5 text-current opacity-80" />
+                      <span className="font-semibold">Auto</span>
+                      <span className="text-[10px] text-neutral-400 font-normal truncate">(Smart Prompt Routing)</span>
+                    </div>
+                    <span
+                      className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
+                        selectedModel === "auto"
+                          ? "bg-white/20 dark:bg-black/20 text-current"
+                          : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                       }`}
                     >
-                      <div className="flex items-center gap-2 truncate">
-                        <ProviderLogo provider={m.provider} modelId={m.id} className="w-3.5 h-3.5 shrink-0 text-current" />
-                        <span className="truncate">{m.name}</span>
-                      </div>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ml-1.5 ${
+                      Recommended
+                    </span>
+                  </button>
+
+                  {filteredModels.map((m) => {
+                    const isSelected = m.id === selectedModel;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          setSelectedModel(m.id);
+                          setShowModelDropdown(false);
+                          toast.success(`Switched model to ${m.name}`);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
                           isSelected
-                            ? "bg-white/20 dark:bg-black/20 text-current"
-                            : "bg-black/[0.04] dark:bg-white/[0.06] text-neutral-500"
+                            ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
+                            : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
                         }`}
                       >
-                        {m.provider}
-                      </span>
-                    </button>
-                  );
-                })}
+                        <div className="flex items-center gap-2 truncate">
+                          <ProviderLogo provider={m.provider} modelId={m.id} className="w-3.5 h-3.5 shrink-0 text-current" />
+                          <span className="truncate">{m.name}</span>
+                        </div>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ml-1.5 ${
+                            isSelected
+                              ? "bg-white/20 dark:bg-black/20 text-current"
+                              : "bg-black/[0.04] dark:bg-white/[0.06] text-neutral-500"
+                          }`}
+                        >
+                          {m.provider}
+                        </span>
+                      </button>
+                    );
+                  })}
 
-                {filteredModels.length === 0 && (
-                  <div className="p-3 text-center space-y-1">
-                    <p className="text-xs text-neutral-500">No additional configured models found</p>
-                    <p className="text-[11px] text-neutral-400">Add API keys in Settings to unlock more frontier models.</p>
-                  </div>
-                )}
-              </div>
+                  {filteredModels.length === 0 && (
+                    <div className="p-3 text-center space-y-1">
+                      <p className="text-xs text-neutral-500">No additional configured models found</p>
+                      <p className="text-[11px] text-neutral-400">Add API keys in Settings to unlock more frontier models.</p>
+                    </div>
+                  )}
+                </div>
 
-              <div className="p-1.5 border-t border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]">
-                <Link
-                  href="/workspace?view=settings"
-                  target="_blank"
-                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Settings className="w-3.5 h-3.5 text-neutral-500" />
-                    <span>Configure API Keys in Settings</span>
-                  </div>
-                  <ExternalLink className="w-3 h-3 text-neutral-400" />
-                </Link>
+                <div className="p-1.5 border-t border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]">
+                  <Link
+                    href="/workspace?view=settings"
+                    target="_blank"
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Settings className="w-3.5 h-3.5 text-neutral-500" />
+                      <span>Configure API Keys in Settings</span>
+                    </div>
+                    <ExternalLink className="w-3 h-3 text-neutral-400" />
+                  </Link>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          {/* Visual Media Studio Engine Dropdown */}
+          <div className="relative" ref={visualEngineDropdownRef}>
+            <button
+              onClick={() => setShowVisualEngineDropdown((prev) => !prev)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-[#201f1d] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.1] text-xs font-medium text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer shadow-2xs"
+              title="Select Image & Video Generation Engine"
+            >
+              <ProviderLogo provider={currentVisualEngineMeta.provider} modelId={selectedVisualEngine} className="w-3.5 h-3.5 text-neutral-700 dark:text-neutral-300 shrink-0" />
+              <span className="truncate max-w-[130px]">{currentVisualEngineMeta.name}</span>
+              <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
+            </button>
+
+            {showVisualEngineDropdown && (
+              <div className="absolute left-0 top-full mt-1.5 w-76 rounded-xl bg-white dark:bg-[#222222] border border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-black/[0.06] dark:border-white/[0.06]">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" />
+                    <input
+                      type="text"
+                      value={visualEngineSearch}
+                      onChange={(e) => setVisualEngineSearch(e.target.value)}
+                      placeholder="Search media engines..."
+                      className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] outline-hidden text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto p-1.5 space-y-0.5">
+                  {filteredVisualEngines.map((eng) => {
+                    const isSelected = selectedVisualEngine === eng.id;
+                    return (
+                      <button
+                        key={eng.id}
+                        onClick={() => {
+                          setSelectedVisualEngine(eng.id);
+                          try {
+                            localStorage.setItem("easycode_visual_engine", eng.id);
+                          } catch (e) {}
+                          setShowVisualEngineDropdown(false);
+                          toast.success(`Selected ${eng.name}`);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                          isSelected
+                            ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
+                            : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <ProviderLogo provider={eng.provider} modelId={eng.id} className="w-3.5 h-3.5 shrink-0 text-current" />
+                          <div className="flex flex-col text-left truncate">
+                            <span className="truncate">{eng.name}</span>
+                            <span className={`text-[10px] truncate ${isSelected ? "opacity-75" : "text-neutral-400"}`}>
+                              {eng.provider} • {eng.badge}
+                            </span>
+                          </div>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-current ml-1" />}
+                      </button>
+                    );
+                  })}
+                  {filteredVisualEngines.length === 0 && (
+                    <div className="p-3 text-center text-xs text-neutral-500">
+                      No media engines match your search
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right Actions: Settings + Clear */}
@@ -1200,6 +1634,7 @@ export default function ProblemPageAiTab({
                         oldCode: pendingDiff.originalCode,
                         newCode: pendingDiff.code,
                         diff: pendingDiff.diff,
+                        isReviewModeAccept: true,
                       }
                     }));
                     setPendingDiff(null);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { GeneratedProblem, GenerationSectionKey, GENERATION_SECTIONS } from "@/types/generatedProblem";
 
 interface UseGammaOrchestratorProps {
@@ -19,7 +19,7 @@ export function useGammaOrchestrator({
   autoStart = true,
 }: UseGammaOrchestratorProps) {
   const [currentStageIndex, setCurrentStageIndex] = useState<number>(0);
-  const [visibleSections, setVisibleSections] = useState<Set<GenerationSectionKey>>(new Set());
+  const [visibleSections, setVisibleSections] = useState<Set<GenerationSectionKey>>(new Set(["title"]));
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [speed, setSpeed] = useState<number>(initialSpeed);
@@ -28,6 +28,7 @@ export function useGammaOrchestrator({
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const typewriterTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const typedTitleForProblemRef = useRef<string | null>(null);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -46,21 +47,21 @@ export function useGammaOrchestrator({
   const getSectionDelay = useCallback((sectionKey: GenerationSectionKey, currentSpeed: number): number => {
     if (currentSpeed >= 999 || prefersReducedMotion) return 10;
     const baseDelays: Record<GenerationSectionKey, number> = {
-      title: 500,
-      difficulty: 350,
-      topics: 300,
+      title: 400,
+      difficulty: 300,
+      topics: 250,
       description: 600,
       constraints: 400,
-      examples: 750,
-      testCases: 550,
-      edgeCases: 500,
-      starterCode: 600,
-      expectedComplexity: 350,
-      hints: 450,
-      followUp: 400,
+      examples: 650,
+      testCases: 500,
+      edgeCases: 450,
+      starterCode: 550,
+      expectedComplexity: 300,
+      hints: 350,
+      followUp: 350,
     };
-    const delay = baseDelays[sectionKey] || 450;
-    return Math.max(80, Math.round(delay / currentSpeed));
+    const delay = baseDelays[sectionKey] || 400;
+    return Math.max(70, Math.round(delay / currentSpeed));
   }, [prefersReducedMotion]);
 
   // Fast skip to complete
@@ -74,6 +75,7 @@ export function useGammaOrchestrator({
     setIsCompleted(true);
     if (problem) {
       setTypewriterTitle(problem.title);
+      typedTitleForProblemRef.current = problem.title;
       if (onCompleteRef.current) onCompleteRef.current(problem);
     }
   }, [problem]);
@@ -83,31 +85,43 @@ export function useGammaOrchestrator({
     if (timerRef.current) clearTimeout(timerRef.current);
     if (typewriterTimerRef.current) clearTimeout(typewriterTimerRef.current);
 
-    setVisibleSections(new Set());
+    typedTitleForProblemRef.current = null;
+    setVisibleSections(new Set(["title"]));
     setCurrentStageIndex(0);
     setIsCompleted(false);
     setTypewriterTitle("");
     setIsPaused(false);
   }, []);
 
-  // Title typewriter effect
+  // Single-run Title typewriter effect (prevent looping)
   useEffect(() => {
-    if (!problem || !visibleSections.has("title")) return;
+    if (!problem?.title) return;
 
     const fullTitle = problem.title;
-    if (speed >= 999 || prefersReducedMotion) {
+
+    // If already typed this title, keep it locked
+    if (typedTitleForProblemRef.current === fullTitle) {
       setTypewriterTitle(fullTitle);
       return;
     }
 
+    if (speed >= 999 || prefersReducedMotion) {
+      setTypewriterTitle(fullTitle);
+      typedTitleForProblemRef.current = fullTitle;
+      return;
+    }
+
     let charIndex = 0;
-    const stepInterval = Math.max(12, Math.round(35 / speed));
+    const stepInterval = Math.max(12, Math.round(30 / speed));
 
     const typeNextChar = () => {
       charIndex++;
-      setTypewriterTitle(fullTitle.substring(0, charIndex));
+      const partial = fullTitle.substring(0, charIndex);
+      setTypewriterTitle(partial);
       if (charIndex < fullTitle.length) {
         typewriterTimerRef.current = setTimeout(typeNextChar, stepInterval);
+      } else {
+        typedTitleForProblemRef.current = fullTitle;
       }
     };
 
@@ -116,16 +130,11 @@ export function useGammaOrchestrator({
     return () => {
       if (typewriterTimerRef.current) clearTimeout(typewriterTimerRef.current);
     };
-  }, [problem, visibleSections, speed, prefersReducedMotion]);
+  }, [problem?.title, speed, prefersReducedMotion]);
 
-  // Progressive Section Progression Choreography
+  // Main Choreography Sequencer
   useEffect(() => {
-    if (!problem || isCompleted || isPaused || !autoStart) return;
-
-    if (prefersReducedMotion || speed >= 999) {
-      skipToEnd();
-      return;
-    }
+    if (!problem || !autoStart || isPaused || isCompleted) return;
 
     if (currentStageIndex >= GENERATION_SECTIONS.length) {
       setIsCompleted(true);
@@ -133,37 +142,61 @@ export function useGammaOrchestrator({
       return;
     }
 
-    const currentMeta = GENERATION_SECTIONS[currentStageIndex];
-    const delay = getSectionDelay(currentMeta.key, speed);
+    const currentSection = GENERATION_SECTIONS[currentStageIndex];
+    const delay = getSectionDelay(currentSection.key, speed);
 
     timerRef.current = setTimeout(() => {
-      setVisibleSections((prev) => new Set([...prev, currentMeta.key]));
+      setVisibleSections((prev) => new Set([...Array.from(prev), currentSection.key]));
       setCurrentStageIndex((prev) => prev + 1);
     }, delay);
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [problem, currentStageIndex, isCompleted, isPaused, speed, autoStart, getSectionDelay, prefersReducedMotion, skipToEnd]);
+  }, [problem, currentStageIndex, isPaused, isCompleted, speed, autoStart, getSectionDelay]);
 
-  const progressPercent = Math.min(100, Math.round((currentStageIndex / GENERATION_SECTIONS.length) * 100));
-  const activeStageMeta = GENERATION_SECTIONS[Math.min(currentStageIndex, GENERATION_SECTIONS.length - 1)];
+  // Active Stage metadata
+  const activeStageMeta = useMemo(() => {
+    if (isCompleted || currentStageIndex >= GENERATION_SECTIONS.length) {
+      return {
+        key: "hints" as GenerationSectionKey,
+        label: "Problem Built",
+        description: "Algorithmic specification ready for solving",
+        iconName: "CheckCircle",
+        order: 13,
+      };
+    }
+    return GENERATION_SECTIONS[currentStageIndex] || GENERATION_SECTIONS[0];
+  }, [currentStageIndex, isCompleted]);
+
+  const activeStageKey = activeStageMeta.key;
+
+  const progressPercent = useMemo(() => {
+    if (isCompleted) return 100;
+    return Math.min(96, Math.round(((currentStageIndex + 1) / GENERATION_SECTIONS.length) * 100));
+  }, [currentStageIndex, isCompleted]);
+
+  const isSectionVisible = useCallback(
+    (key: GenerationSectionKey): boolean => {
+      return visibleSections.has(key) || isCompleted;
+    },
+    [visibleSections, isCompleted]
+  );
 
   return {
     currentStageIndex,
+    visibleSections,
     isCompleted,
-    isGenerating,
-    isPaused,
-    speed,
     progressPercent,
     activeStageMeta,
-    visibleSections,
+    activeStageKey,
+    speed,
+    isPaused,
     typewriterTitle,
-    prefersReducedMotion,
     setSpeed,
     skipToEnd,
     replay,
     togglePause: () => setIsPaused((prev) => !prev),
-    isSectionVisible: (key: GenerationSectionKey) => visibleSections.has(key),
+    isSectionVisible,
   };
 }

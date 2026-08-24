@@ -66,13 +66,25 @@ export default function ProblemPageTestResult({
   const setActiveTab = setExternalTab || setInternalTab;
 
   const [selectedCaseIdx, setSelectedCaseIdx] = useState<number>(0);
-  const [editableTestCases, setEditableTestCases] = useState<Array<{ input: string; output: string }>>(DEFAULT_TEST_CASES);
+  const extractTestCases = (info: any): Array<{ input: string; output: string }> => {
+    if (!info?.testCases) return [];
+    if (Array.isArray(info.testCases)) return info.testCases;
+    if (Array.isArray(info.testCases.visible)) return info.testCases.visible;
+    return [];
+  };
+
+  const [editableTestCases, setEditableTestCases] = useState<Array<{ input: string; output: string }>>(() =>
+    extractTestCases(problemInfo)
+  );
   const [isModified, setIsModified] = useState<boolean>(false);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState<boolean>(false);
 
   useEffect(() => {
-    if (problemInfo?.testCases && problemInfo.testCases.length > 0) {
-      setEditableTestCases(problemInfo.testCases);
+    const cases = extractTestCases(problemInfo);
+    if (cases.length > 0) {
+      setEditableTestCases(cases);
+    } else if (!problemInfo) {
+      setEditableTestCases([]);
     }
   }, [problemInfo]);
 
@@ -313,67 +325,75 @@ export default function ProblemPageTestResult({
         {/* TAB 1: TESTCASE (With Top-Right x badge on case tab & parameter inputs) */}
         {activeTab === 'testcase' && (
           <div className="space-y-4">
-            {/* Case 1, Case 2, Case 3 Selectors + Add Button */}
-            <div className="flex items-center flex-wrap gap-2.5 pt-1">
-              {editableTestCases.map((_, idx) => {
-                const isSelected = selectedCaseIdx === idx;
-                return (
-                  <div key={idx} className="relative inline-block group">
-                    <button
-                      onClick={() => setSelectedCaseIdx(idx)}
-                      className={`px-4 py-1.5 rounded-lg font-medium text-xs transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-neutral-200/90 dark:bg-neutral-700 text-neutral-900 dark:text-white font-semibold'
-                          : 'bg-neutral-100 dark:bg-neutral-800/60 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
-                      }`}
-                    >
-                      Case {idx + 1}
-                    </button>
+            {editableTestCases.length === 0 ? (
+              <div className="py-8 text-center text-xs text-neutral-400 font-mono">
+                {problemInfo ? "No test cases configured." : "Test cases will appear here once problem generation completes."}
+              </div>
+            ) : (
+              <>
+                {/* Case 1, Case 2, Case 3 Selectors + Add Button */}
+                <div className="flex items-center flex-wrap gap-2.5 pt-1">
+                  {editableTestCases.map((_, idx) => {
+                    const isSelected = selectedCaseIdx === idx;
+                    return (
+                      <div key={idx} className="relative inline-block group">
+                        <button
+                          onClick={() => setSelectedCaseIdx(idx)}
+                          className={`px-4 py-1.5 rounded-lg font-medium text-xs transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-neutral-200/90 dark:bg-neutral-700 text-neutral-900 dark:text-white font-semibold'
+                              : 'bg-neutral-100 dark:bg-neutral-800/60 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
+                          }`}
+                        >
+                          Case {idx + 1}
+                        </button>
 
-                    {/* Delete x button anchored at top-right corner, ONLY appearing on hover (User Request) */}
-                    {editableTestCases.length > 1 && (
+                        {/* Delete x button anchored at top-right corner, ONLY appearing on hover (User Request) */}
+                        {editableTestCases.length > 1 && (
+                          <button
+                            onClick={(e) => handleDeleteCase(idx, e)}
+                            className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-neutral-400 hover:bg-neutral-600 dark:bg-neutral-500 dark:hover:bg-neutral-400 text-white flex items-center justify-center text-[9px] cursor-pointer shadow-sm transition-opacity opacity-0 group-hover:opacity-100"
+                            title="Delete case"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Plus button to add testcase */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                       <button
-                        onClick={(e) => handleDeleteCase(idx, e)}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-neutral-400 hover:bg-neutral-600 dark:bg-neutral-500 dark:hover:bg-neutral-400 text-white flex items-center justify-center text-[9px] cursor-pointer shadow-sm transition-opacity opacity-0 group-hover:opacity-100"
-                        title="Delete case"
+                        onClick={handleAddCase}
+                        className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
                       >
-                        <X className="w-2.5 h-2.5" />
+                        <Plus className="w-4 h-4" />
                       </button>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Plus button to add testcase */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={handleAddCase}
-                    className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>Add Testcase</TooltipContent>
-              </Tooltip>
-            </div>
-
-            {/* Editable Parameter Inputs */}
-            <div className="space-y-3.5 pt-1">
-              {parsedParams.map((param, pIdx) => (
-                <div key={pIdx}>
-                  <label className="text-[11.5px] font-medium text-neutral-500 dark:text-neutral-400 mb-1.5 block font-mono">
-                    {param.name} =
-                  </label>
-                  <input
-                    type="text"
-                    value={param.value}
-                    onChange={(e) => handleParamChange(pIdx, e.target.value)}
-                    className="w-full rounded-lg bg-neutral-100/70 dark:bg-[#242424] border border-transparent focus:border-blue-500 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-[#1a1a1a] focus:ring-1 focus:ring-blue-500 p-2.5 font-mono text-[13px] text-neutral-800 dark:text-neutral-200 outline-none transition-all"
-                  />
+                    </TooltipTrigger>
+                    <TooltipContent>Add Testcase</TooltipContent>
+                  </Tooltip>
                 </div>
-              ))}
-            </div>
+
+                {/* Editable Parameter Inputs */}
+                <div className="space-y-3.5 pt-1">
+                  {parsedParams.map((param, pIdx) => (
+                    <div key={pIdx}>
+                      <label className="text-[11.5px] font-medium text-neutral-500 dark:text-neutral-400 mb-1.5 block font-mono">
+                        {param.name} =
+                      </label>
+                      <input
+                        type="text"
+                        value={param.value}
+                        onChange={(e) => handleParamChange(pIdx, e.target.value)}
+                        className="w-full rounded-lg bg-neutral-100/70 dark:bg-[#242424] border border-transparent focus:border-blue-500 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-[#1a1a1a] focus:ring-1 focus:ring-blue-500 p-2.5 font-mono text-[13px] text-neutral-800 dark:text-neutral-200 outline-none transition-all"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
