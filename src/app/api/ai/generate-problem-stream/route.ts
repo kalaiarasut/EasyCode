@@ -5,6 +5,70 @@ import { GeneratedProblem } from "@/types/generatedProblem";
 
 export const runtime = "nodejs";
 
+async function resolveWorkingGeminiModel(
+  apiKey: string,
+  preferredModel: string
+): Promise<{ modelName: string; availableModels: string[]; error?: string }> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      { method: "GET" }
+    );
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const msg = errData?.error?.message || `Google API error (Status ${res.status}): ${res.statusText}`;
+      return { modelName: "", availableModels: [], error: msg };
+    }
+
+    const data = await res.json();
+    const models: any[] = data.models || [];
+    const supported = models
+      .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m: any) => m.name.replace(/^models\//, ""));
+
+    if (supported.length === 0) {
+      return {
+        modelName: "",
+        availableModels: [],
+        error: "Your Google API key has no models enabled for generateContent. Please ensure 'Generative Language API' is enabled on your project in Google Cloud / Google AI Studio.",
+      };
+    }
+
+    if (supported.includes(preferredModel)) {
+      return { modelName: preferredModel, availableModels: supported };
+    }
+
+    const cleanPreferred = preferredModel.replace("-exp", "").replace("-latest", "").replace("-001", "").replace("-002", "");
+    const match = supported.find((m) => m.includes(cleanPreferred) || cleanPreferred.includes(m));
+    if (match) {
+      return { modelName: match, availableModels: supported };
+    }
+
+    const priorityList = [
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-exp",
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-latest",
+      "gemini-1.5-pro",
+      "gemini-1.5-pro-latest",
+      "gemini-2.0-flash-thinking-exp-01-21",
+      "gemini-2.0-flash-thinking-exp",
+      "gemini-2.0-pro-exp-02-05",
+      "gemini-pro",
+    ];
+
+    for (const p of priorityList) {
+      if (supported.includes(p)) {
+        return { modelName: p, availableModels: supported };
+      }
+    }
+
+    return { modelName: supported[0], availableModels: supported };
+  } catch (e: any) {
+    return { modelName: preferredModel, availableModels: [], error: e?.message || String(e) };
+  }
+}
+
 const SYSTEM_PROMPT_TEMPLATE = (difficulty: string, topic: string, focus: string, model: string, customInstructions: string, memoryContext: string) => `
 You are a Principal AI Competitive Programming & Algorithmic Problem Setter for LeetCode.
 Your task is to generate a comprehensive, production-grade, LeetCode-style algorithmic challenge in strict JSON format.
@@ -178,7 +242,7 @@ export async function POST(req: NextRequest) {
       difficulty = "Medium",
       topic = "Algorithms",
       focus = "Generate Problem",
-      model = "gemini-2.5-flash",
+      model = "gemini-3.6-flash",
       customInstructions = "",
       customKeys = {},
       memories = []
@@ -215,48 +279,52 @@ export async function POST(req: NextRequest) {
               throw new Error("No valid Gemini API key configured. Please add your key in Settings.");
             }
 
-            const ai = new GoogleGenAI({ apiKey });
-            let candidates = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
-            if (model.includes("2.5-pro")) candidates = ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-2.0-flash"];
-            else if (model.includes("thinking")) candidates = ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-thinking-exp", "gemini-2.0-flash"];
-            else if (model.includes("1.5-pro")) candidates = ["gemini-1.5-pro", "gemini-2.0-flash"];
-            else if (model.includes("1.5-flash")) candidates = ["gemini-1.5-flash", "gemini-2.0-flash"];
+            // Resolve verified working model for this user's API key
+            const { modelName: activeGeminiModel, error: geminiResolveErr } = await resolveWorkingGeminiModel(apiKey, model);
+            if (!activeGeminiModel) {
+              throw new Error(geminiResolveErr || "No working Gemini model available for this API key.");
+            }
 
+            const ai = new GoogleGenAI({ apiKey });
             sendEvent({ type: "chunk", section: "title", content: "Synthesizing challenge architecture..." });
 
-            let lastGeminiErr: any = null;
-            for (const targetModel of candidates) {
-              try {
-                const streamResult = await ai.models.generateContentStream({
-                  model: targetModel,
-                  contents: systemPrompt
-                });
+            try {
+              const streamResult = await ai.models.generateContentStream({
+                model: activeGeminiModel,
+                contents: systemPrompt
+              });
 
-                for await (const chunk of streamResult) {
-                  const chunkText = chunk.text || "";
-                  rawResponseText += chunkText;
-                  sendEvent({ type: "chunk", content: chunkText });
+              for await (const chunk of streamResult) {
+                const chunkText = chunk.text || "";
+                rawResponseText += chunkText;
+                sendEvent({ type: "chunk", content: chunkText });
+              }
+            } catch (streamErr: any) {
+              console.warn(`Gemini stream failed with ${activeGeminiModel}, attempting direct REST...`);
+              const restRes = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${activeGeminiModel}:generateContent?key=${apiKey}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    contents: [{ parts: [{ text: systemPrompt }] }],
+                  }),
                 }
-
-                if (rawResponseText.trim()) break;
-              } catch (streamErr: any) {
-                lastGeminiErr = streamErr;
-                console.warn(`Gemini ${targetModel} stream failed, trying unary or next candidate...`);
-                try {
-                  const unaryResult = await ai.models.generateContent({
-                    model: targetModel,
-                    contents: systemPrompt
-                  });
-                  rawResponseText = unaryResult.text || "";
-                  if (rawResponseText.trim()) break;
-                } catch (unaryErr) {
-                  lastGeminiErr = unaryErr;
+              );
+              if (restRes.ok) {
+                const data = await restRes.json();
+                rawResponseText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                if (rawResponseText) {
+                  sendEvent({ type: "chunk", content: rawResponseText });
                 }
+              } else {
+                const errData = await restRes.json().catch(() => ({}));
+                throw new Error(errData?.error?.message || streamErr?.message || `Google API error ${restRes.status}`);
               }
             }
 
             if (!rawResponseText.trim()) {
-              throw lastGeminiErr || new Error("Failed to generate content from Gemini models.");
+              throw new Error(`Failed to generate content from Gemini model ${activeGeminiModel}.`);
             }
           }
 

@@ -4,12 +4,20 @@ import { performWebSearch } from "@/utils/webSearch";
 import { formatImageMarkdownResponse } from "@/utils/imageGenerator";
 
 const MODEL_NAME_MAP: Record<string, string> = {
-  "gemini-2.5-flash": "Gemini 2.5 Flash",
-  "gemini-2.5-pro": "Gemini 2.5 Pro",
-  "gemini-2.0-flash-thinking": "Gemini 2.0 Flash Thinking",
-  "gemini-2.0-flash": "Gemini 2.0 Flash",
-  "gemini-1.5-pro": "Gemini 1.5 Pro",
-  "gemini-1.5-flash": "Gemini 1.5 Flash",
+  "gemini-3.6-flash": "Gemini 3.6 Flash",
+  "gemini-3.5-flash": "Gemini 3.5 Flash",
+  "gemini-flash-latest": "Gemini Flash Latest",
+  "gemini-3.7-flash": "Gemini 3.7 Flash",
+  "gemini-3.1-pro-preview": "Gemini 3.1 Pro",
+  "gemini-2.0-flash": "Gemini 3.6 Flash",
+  "gemini-2.5-flash": "Gemini 3.6 Flash",
+  "gemini-2.5-pro": "Gemini 3.1 Pro",
+  "groq/compound": "Groq Compound (MoE)",
+  "groq/compound-mini": "Groq Compound Mini",
+  "qwen/qwen3.6-27b": "Qwen 3.6 27B (Groq)",
+  "openai/gpt-oss-120b": "GPT-OSS 120B (Groq)",
+  "openai/gpt-oss-20b": "GPT-OSS 20B (Groq)",
+  "allam-2-7b": "Allam 2 7B (Groq)",
   "claude-3.7-sonnet": "Claude 3.7 Sonnet",
   "claude-3.5-sonnet": "Claude 3.5 Sonnet",
   "claude-3.5-haiku": "Claude 3.5 Haiku",
@@ -22,9 +30,6 @@ const MODEL_NAME_MAP: Record<string, string> = {
   "deepseek-r1": "DeepSeek R1",
   "deepseek-v3": "DeepSeek V3",
   "deepseek-coder-v2": "DeepSeek Coder V2",
-  "groq-llama-3.3-70b": "Llama 3.3 70B (Groq)",
-  "groq-deepseek-r1-llama-70b": "DeepSeek R1 70B (Groq)",
-  "groq-qwen-2.5-coder-32b": "Qwen 2.5 Coder (Groq)",
   "kimi-latest": "Kimi Latest",
   "moonshot-v1-32k": "Moonshot v1 32k",
   "qwen-2.5-coder-32b": "Qwen 2.5 Coder 32B",
@@ -40,22 +45,71 @@ const MODEL_NAME_MAP: Record<string, string> = {
   "ollama-local": "Local Ollama",
 };
 
-// Map Gemini IDs to real Google Gemini API model names in priority order
-function getGeminiCandidateModels(modelId: string): string[] {
-  if (modelId === "gemini-2.5-pro") {
-    return ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-2.0-flash"];
+// Dynamic resolution using Google ListModels API to guarantee model exists for user's key
+async function resolveWorkingGeminiModel(
+  apiKey: string,
+  preferredModel: string
+): Promise<{ modelName: string; availableModels: string[]; error?: string }> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      { method: "GET" }
+    );
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const msg = errData?.error?.message || `Google API error (Status ${res.status}): ${res.statusText}`;
+      return { modelName: "", availableModels: [], error: msg };
+    }
+
+    const data = await res.json();
+    const models: any[] = data.models || [];
+    const supported = models
+      .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m: any) => m.name.replace(/^models\//, ""));
+
+    if (supported.length === 0) {
+      return {
+        modelName: "",
+        availableModels: [],
+        error: "Your Google API key has no models enabled for generateContent. Please ensure 'Generative Language API' is enabled on your project in Google Cloud / Google AI Studio.",
+      };
+    }
+
+    // Direct match
+    if (supported.includes(preferredModel)) {
+      return { modelName: preferredModel, availableModels: supported };
+    }
+
+    // Match without prefixes/suffixes
+    const cleanPreferred = preferredModel.replace("-exp", "").replace("-latest", "").replace("-001", "").replace("-002", "");
+    const match = supported.find((m) => m.includes(cleanPreferred) || cleanPreferred.includes(m));
+    if (match) {
+      return { modelName: match, availableModels: supported };
+    }
+
+    // Priority fallback from supported list
+    const priorityList = [
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-flash-latest",
+      "gemini-3.7-flash",
+      "gemini-3.1-pro-preview",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-pro-latest",
+      "gemini-pro",
+    ];
+
+    for (const p of priorityList) {
+      if (supported.includes(p)) {
+        return { modelName: p, availableModels: supported };
+      }
+    }
+
+    return { modelName: supported[0], availableModels: supported };
+  } catch (e: any) {
+    return { modelName: preferredModel, availableModels: [], error: e?.message || String(e) };
   }
-  if (modelId === "gemini-2.0-flash-thinking") {
-    return ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-thinking-exp", "gemini-2.0-flash"];
-  }
-  if (modelId === "gemini-1.5-pro") {
-    return ["gemini-1.5-pro", "gemini-2.0-flash"];
-  }
-  if (modelId === "gemini-1.5-flash") {
-    return ["gemini-1.5-flash", "gemini-2.0-flash"];
-  }
-  // Default for gemini-2.5-flash or gemini-2.0-flash or auto
-  return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 }
 
 export async function POST(req: NextRequest) {
@@ -291,36 +345,55 @@ Instructions:
 
               sendEvent({ type: "thinking_stage", verb: "Synthesizing", phase: "synthesis" });
 
+              // Resolve verified working model for this user's API key
+              const { modelName: activeGeminiModel, error: geminiResolveErr } = await resolveWorkingGeminiModel(geminiKey, targetModel);
+
+              if (!activeGeminiModel) {
+                throw new Error(geminiResolveErr || "No working Gemini model available for this API key.");
+              }
+
               const ai = new GoogleGenAI({ apiKey: geminiKey });
-              const candidates = getGeminiCandidateModels(targetModel);
-              let lastGeminiError: any = null;
+              try {
+                const streamResult = await ai.models.generateContentStream({
+                  model: activeGeminiModel,
+                  contents: systemPrompt,
+                });
 
-              for (const candidate of candidates) {
-                try {
-                  const streamResult = await ai.models.generateContentStream({
-                    model: candidate,
-                    contents: systemPrompt,
-                  });
-
-                  for await (const chunk of streamResult) {
-                    const chunkText = chunk.text || "";
-                    if (chunkText) {
-                      fullText += chunkText;
-                      sendEvent({ type: "chunk", text: chunkText });
-                    }
+                for await (const chunk of streamResult) {
+                  const chunkText = chunk.text || "";
+                  if (chunkText) {
+                    fullText += chunkText;
+                    sendEvent({ type: "chunk", text: chunkText });
                   }
-
-                  if (fullText.trim()) {
-                    break; // Successfully generated content!
+                }
+              } catch (sdkErr: any) {
+                console.warn(`Gemini SDK stream failed with ${activeGeminiModel}, attempting direct REST stream...`, sdkErr?.message || sdkErr);
+                // Try direct REST endpoint
+                const restRes = await fetch(
+                  `https://generativelanguage.googleapis.com/v1beta/models/${activeGeminiModel}:generateContent?key=${geminiKey}`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      contents: [{ parts: [{ text: systemPrompt }] }],
+                    }),
                   }
-                } catch (e: any) {
-                  lastGeminiError = e;
-                  console.warn(`Gemini candidate ${candidate} failed, trying next...`, e?.message || e);
+                );
+                if (restRes.ok) {
+                  const data = await restRes.json();
+                  const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                  if (txt) {
+                    fullText = txt;
+                    sendEvent({ type: "chunk", text: txt });
+                  }
+                } else {
+                  const errData = await restRes.json().catch(() => ({}));
+                  throw new Error(errData?.error?.message || sdkErr?.message || `Google API error ${restRes.status}`);
                 }
               }
 
               if (!fullText.trim()) {
-                throw lastGeminiError || new Error("Failed to stream response from Gemini API.");
+                throw new Error(`Failed to generate response from Gemini model ${activeGeminiModel}.`);
               }
             }
 
@@ -400,13 +473,25 @@ Instructions:
               if (targetModel.startsWith("deepseek")) {
                 endpoint = "https://api.deepseek.com/v1/chat/completions";
                 apiKey = customKeys.deepseek || process.env.DEEPSEEK_API_KEY || apiKey;
-              } else if (targetModel.startsWith("groq")) {
+              } else if (
+                targetModel.startsWith("groq") ||
+                targetModel.startsWith("qwen/") ||
+                targetModel.startsWith("openai/gpt-oss") ||
+                targetModel.startsWith("allam-")
+              ) {
                 endpoint = "https://api.groq.com/openai/v1/chat/completions";
                 apiKey = customKeys.groq || process.env.GROQ_API_KEY || apiKey;
-                if (targetModel.includes("llama-3.3-70b")) openAiModel = "llama-3.3-70b-versatile";
-                else if (targetModel.includes("deepseek-r1")) openAiModel = "deepseek-r1-distill-llama-70b";
-                else if (targetModel.includes("qwen")) openAiModel = "qwen-2.5-coder-32b";
-                else openAiModel = targetModel.replace("groq-", "");
+                if (targetModel === "groq/compound" || targetModel === "groq/compound-mini" || targetModel.startsWith("qwen/") || targetModel.startsWith("openai/gpt-oss") || targetModel.startsWith("allam-")) {
+                  openAiModel = targetModel;
+                } else if (targetModel.includes("compound-mini")) {
+                  openAiModel = "groq/compound-mini";
+                } else if (targetModel.includes("compound")) {
+                  openAiModel = "groq/compound";
+                } else if (targetModel.includes("qwen")) {
+                  openAiModel = "qwen/qwen3.6-27b";
+                } else {
+                  openAiModel = "groq/compound";
+                }
               } else if (targetModel.startsWith("kimi") || targetModel.startsWith("moonshot")) {
                 endpoint = "https://api.moonshot.cn/v1/chat/completions";
                 apiKey = customKeys.kimi || process.env.MOONSHOT_API_KEY || apiKey;
@@ -523,28 +608,49 @@ Instructions:
         );
       }
 
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
-      const candidates = getGeminiCandidateModels(targetModel);
-      let lastGeminiError: any = null;
+      const { modelName: activeGeminiModel, error: geminiResolveErr } = await resolveWorkingGeminiModel(geminiKey, targetModel);
 
-      for (const candidate of candidates) {
+      if (!activeGeminiModel) {
+        throw new Error(geminiResolveErr || "No working Gemini model available for this API key.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      try {
+        const result = await ai.models.generateContent({
+          model: activeGeminiModel,
+          contents: systemPrompt,
+        });
+        responseText = result.text || "";
+      } catch (err: any) {
+        if (err?.status === 429 || String(err).includes("429") || String(err).includes("quota")) {
+          rateLimited = true;
+        }
+        // Fallback to direct REST endpoint
         try {
-          const result = await ai.models.generateContent({
-            model: candidate,
-            contents: systemPrompt,
-          });
-          responseText = result.text || "";
-          if (responseText.trim()) break;
-        } catch (err: any) {
-          lastGeminiError = err;
-          if (err?.status === 429 || String(err).includes("429") || String(err).includes("quota")) {
-            rateLimited = true;
+          const restRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${activeGeminiModel}:generateContent?key=${geminiKey}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: systemPrompt }] }],
+              }),
+            }
+          );
+          if (restRes.ok) {
+            const data = await restRes.json();
+            responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          } else {
+            const errData = await restRes.json().catch(() => ({}));
+            throw new Error(errData?.error?.message || err?.message || `Google API error ${restRes.status}`);
           }
+        } catch (restErr: any) {
+          throw restErr || err;
         }
       }
 
       if (!responseText.trim()) {
-        throw lastGeminiError || new Error("Failed to generate response from Gemini API.");
+        throw new Error(`Failed to generate response from Gemini model ${activeGeminiModel}.`);
       }
     } else if (targetModel.startsWith("claude")) {
       const claudeKey = customKeys.anthropic || process.env.ANTHROPIC_API_KEY;
@@ -590,13 +696,25 @@ Instructions:
       if (targetModel.startsWith("deepseek")) {
         endpoint = "https://api.deepseek.com/v1/chat/completions";
         apiKey = customKeys.deepseek || process.env.DEEPSEEK_API_KEY || apiKey;
-      } else if (targetModel.startsWith("groq")) {
+      } else if (
+        targetModel.startsWith("groq") ||
+        targetModel.startsWith("qwen/") ||
+        targetModel.startsWith("openai/gpt-oss") ||
+        targetModel.startsWith("allam-")
+      ) {
         endpoint = "https://api.groq.com/openai/v1/chat/completions";
         apiKey = customKeys.groq || process.env.GROQ_API_KEY || apiKey;
-        if (targetModel.includes("llama-3.3-70b")) openAiModel = "llama-3.3-70b-versatile";
-        else if (targetModel.includes("deepseek-r1")) openAiModel = "deepseek-r1-distill-llama-70b";
-        else if (targetModel.includes("qwen")) openAiModel = "qwen-2.5-coder-32b";
-        else openAiModel = targetModel.replace("groq-", "");
+        if (targetModel === "groq/compound" || targetModel === "groq/compound-mini" || targetModel.startsWith("qwen/") || targetModel.startsWith("openai/gpt-oss") || targetModel.startsWith("allam-")) {
+          openAiModel = targetModel;
+        } else if (targetModel.includes("compound-mini")) {
+          openAiModel = "groq/compound-mini";
+        } else if (targetModel.includes("compound")) {
+          openAiModel = "groq/compound";
+        } else if (targetModel.includes("qwen")) {
+          openAiModel = "qwen/qwen3.6-27b";
+        } else {
+          openAiModel = "groq/compound";
+        }
       } else if (targetModel.startsWith("kimi") || targetModel.startsWith("moonshot")) {
         endpoint = "https://api.moonshot.cn/v1/chat/completions";
         apiKey = customKeys.kimi || process.env.MOONSHOT_API_KEY || apiKey;

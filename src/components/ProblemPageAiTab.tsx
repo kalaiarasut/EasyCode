@@ -79,11 +79,11 @@ interface ChatMessage {
 
 const ALL_POSSIBLE_MODELS: ModelItem[] = [
   // 1. Google DeepMind
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "Google", badge: "Fast", requiredKey: "gemini", category: "Frontier" },
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "Google", badge: "Advanced", requiredKey: "gemini", category: "Frontier" },
-  { id: "gemini-2.0-flash-thinking", name: "Gemini 2.0 Flash Thinking", provider: "Google", badge: "Reasoning", requiredKey: "gemini", category: "Reasoning" },
-  { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "Google", badge: "Speed", requiredKey: "gemini", category: "Speed" },
-  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", provider: "Google", badge: "2M Context", requiredKey: "gemini", category: "Frontier" },
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", provider: "Google", badge: "Flagship", requiredKey: "gemini", category: "Frontier" },
+  { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", provider: "Google", badge: "Speed", requiredKey: "gemini", category: "Speed" },
+  { id: "gemini-flash-latest", name: "Gemini Flash Latest", provider: "Google", badge: "Fast", requiredKey: "gemini", category: "Speed" },
+  { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", provider: "Google", badge: "Hybrid CoT", requiredKey: "gemini", category: "Reasoning" },
+  { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", provider: "Google", badge: "2M Context", requiredKey: "gemini", category: "Frontier" },
 
   // 2. Anthropic
   { id: "claude-3.7-sonnet", name: "Claude 3.7 Sonnet", provider: "Anthropic", badge: "Coding SOTA", requiredKey: "anthropic", category: "Coding" },
@@ -104,9 +104,12 @@ const ALL_POSSIBLE_MODELS: ModelItem[] = [
   { id: "deepseek-coder-v2", name: "DeepSeek Coder V2", provider: "DeepSeek", badge: "Code", requiredKey: "deepseek", category: "Coding" },
 
   // 5. Groq
-  { id: "groq-llama-3.3-70b", name: "Llama 3.3 70B (Groq)", provider: "Groq", badge: "Ultra Fast", requiredKey: "groq", category: "Speed" },
-  { id: "groq-deepseek-r1-llama-70b", name: "DeepSeek R1 70B (Groq)", provider: "Groq", badge: "Instant CoT", requiredKey: "groq", category: "Reasoning" },
-  { id: "groq-qwen-2.5-coder-32b", name: "Qwen 2.5 Coder (Groq)", provider: "Groq", badge: "Fast Coder", requiredKey: "groq", category: "Speed" },
+  { id: "groq/compound", name: "Groq Compound (MoE)", provider: "Groq", badge: "Ultra Fast", requiredKey: "groq", category: "Speed" },
+  { id: "groq/compound-mini", name: "Groq Compound Mini", provider: "Groq", badge: "Instant", requiredKey: "groq", category: "Speed" },
+  { id: "qwen/qwen3.6-27b", name: "Qwen 3.6 27B (Groq)", provider: "Groq", badge: "Deep CoT", requiredKey: "groq", category: "Reasoning" },
+  { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B (Groq)", provider: "Groq", badge: "Flagship", requiredKey: "groq", category: "Frontier" },
+  { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B (Groq)", provider: "Groq", badge: "Fast", requiredKey: "groq", category: "Speed" },
+  { id: "allam-2-7b", name: "Allam 2 7B (Groq)", provider: "Groq", badge: "Multilingual", requiredKey: "groq", category: "Speed" },
 
   // 6. Moonshot AI (Kimi)
   { id: "kimi-latest", name: "Kimi Latest", provider: "Moonshot AI", badge: "128k Context", requiredKey: "kimi", category: "Reasoning" },
@@ -254,27 +257,52 @@ export default function ProblemPageAiTab({
     } catch (e) {}
   }, []);
 
-  // Helper: Is a model available based strictly on valid saved key and rate limit?
+  const [verifiedModelsByProvider, setVerifiedModelsByProvider] = useState<Record<string, string[]>>({});
+
+  // Verify models dynamically against provider APIs
+  useEffect(() => {
+    if (Object.keys(apiKeys).length > 0) {
+      fetch("/api/models/available", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customKeys: apiKeys }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success && data.availableByProvider) {
+            setVerifiedModelsByProvider(data.availableByProvider);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [apiKeys]);
+
+  // Helper: Is a model available based strictly on valid saved key, verified status, and rate limit?
   const isModelValidAndAvailable = (model: ModelItem): boolean => {
     if (rateLimitedModels.has(model.id)) return false;
     if (!model.requiredKey) return false;
 
     const keyVal = apiKeys[model.requiredKey];
-    if (keyVal && typeof keyVal === "string" && keyVal.trim().length > 5) {
-      return true;
+    if (!keyVal || typeof keyVal !== "string" || keyVal.trim().length <= 5) {
+      return false;
     }
 
-    if (model.requiredKey === "gemini") {
-      return true;
+    if (verifiedModelsByProvider[model.requiredKey]) {
+      const activeList = verifiedModelsByProvider[model.requiredKey];
+      if (activeList.length === 0) return false;
+      if (model.requiredKey === "gemini") {
+        const cleanId = model.id.replace("-exp", "").replace("-latest", "");
+        return activeList.some((m) => m.includes(cleanId) || cleanId.includes(m) || m.includes("gemini"));
+      }
     }
 
-    return false;
+    return true;
   };
 
   // Filter ONLY available models with valid saved keys that haven't hit rate limits
   const availableModels = useMemo(() => {
     return ALL_POSSIBLE_MODELS.filter((m) => isModelValidAndAvailable(m));
-  }, [apiKeys, rateLimitedModels]);
+  }, [apiKeys, rateLimitedModels, verifiedModelsByProvider]);
 
   // Close model dropdown on outside click
   useEffect(() => {
@@ -555,6 +583,9 @@ export default function ProblemPageAiTab({
                       }
                     }
                   }
+                  if (event.isRateLimited && event.rateLimitedModel) {
+                    setRateLimitedModels((prev) => new Set([...prev, event.rateLimitedModel]));
+                  }
                 }
               } catch (e) {}
             }
@@ -577,13 +608,12 @@ export default function ProblemPageAiTab({
           return [...newChats];
         });
       } else {
-        toast.error("Failed to connect to AI assistant");
         setChats((prev) => {
           const newChats = [...prev];
           const target = newChats.find((c) => c.id === messageId);
           if (target) {
-            target.output = "Sorry, there was an error processing your request. Please check your API key settings.";
-            target.modelUsed = "Fallback";
+            target.output = `❌ **Error**: \`${error?.message || "Failed to connect to AI assistant"}\`\n\n*Please check your API key and connection settings.*`;
+            target.modelUsed = "Error";
             target.isStreaming = false;
           }
           return [...newChats];

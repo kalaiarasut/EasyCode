@@ -171,11 +171,11 @@ const ALL_MODELS: ModelDefinition[] = [
   { id: "moonshot-v1-8k", name: "Moonshot v1 8k", provider: "Moonshot AI", category: "Speed", badge: "Fast", contextWindow: "8k tokens", requiredKey: "kimi" },
 
   // 2. Google DeepMind
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "Google", category: "Frontier", badge: "Fast", contextWindow: "1M tokens", requiredKey: "gemini" },
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "Google", category: "Frontier", badge: "Advanced", contextWindow: "2M tokens", requiredKey: "gemini" },
-  { id: "gemini-2.0-flash-thinking", name: "Gemini 2.0 Flash Thinking", provider: "Google", category: "Reasoning", badge: "Reasoning", contextWindow: "1M tokens", requiredKey: "gemini" },
-  { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "Google", category: "Speed", badge: "Speed", contextWindow: "1M tokens", requiredKey: "gemini" },
-  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", provider: "Google", category: "Frontier", badge: "2M Context", contextWindow: "2M tokens", requiredKey: "gemini" },
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", provider: "Google", category: "Frontier", badge: "Flagship", contextWindow: "1M tokens", requiredKey: "gemini" },
+  { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", provider: "Google", category: "Speed", badge: "Speed", contextWindow: "1M tokens", requiredKey: "gemini" },
+  { id: "gemini-flash-latest", name: "Gemini Flash Latest", provider: "Google", category: "Speed", badge: "Fast", contextWindow: "1M tokens", requiredKey: "gemini" },
+  { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", provider: "Google", category: "Reasoning", badge: "Hybrid CoT", contextWindow: "1M tokens", requiredKey: "gemini" },
+  { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", provider: "Google", category: "Frontier", badge: "2M Context", contextWindow: "2M tokens", requiredKey: "gemini" },
 
   // 3. OpenAI
   { id: "o3-mini", name: "o3-mini", provider: "OpenAI", category: "Reasoning", badge: "STEM SOTA", contextWindow: "128k tokens", requiredKey: "openai" },
@@ -196,9 +196,12 @@ const ALL_MODELS: ModelDefinition[] = [
   { id: "deepseek-coder-v2", name: "DeepSeek Coder V2", provider: "DeepSeek", category: "Coding", badge: "338+ Langs", contextWindow: "128k tokens", requiredKey: "deepseek" },
 
   // 6. Groq LPUs
-  { id: "groq-llama-3.3-70b", name: "Llama 3.3 70B (Groq)", provider: "Groq", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "groq" },
-  { id: "groq-deepseek-r1-llama-70b", name: "DeepSeek R1 70B (Groq)", provider: "Groq", category: "Reasoning", badge: "Instant CoT", contextWindow: "128k tokens", requiredKey: "groq" },
-  { id: "groq-qwen-2.5-coder-32b", name: "Qwen 2.5 Coder (Groq)", provider: "Groq", category: "Speed", badge: "Fast Coder", contextWindow: "32k tokens", requiredKey: "groq" },
+  { id: "groq/compound", name: "Groq Compound (MoE)", provider: "Groq", category: "Speed", badge: "Ultra Fast", contextWindow: "128k tokens", requiredKey: "groq" },
+  { id: "groq/compound-mini", name: "Groq Compound Mini", provider: "Groq", category: "Speed", badge: "Instant", contextWindow: "128k tokens", requiredKey: "groq" },
+  { id: "qwen/qwen3.6-27b", name: "Qwen 3.6 27B (Groq)", provider: "Groq", category: "Reasoning", badge: "Deep CoT", contextWindow: "32k tokens", requiredKey: "groq" },
+  { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B (Groq)", provider: "Groq", category: "Frontier", badge: "Flagship", contextWindow: "128k tokens", requiredKey: "groq" },
+  { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B (Groq)", provider: "Groq", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "groq" },
+  { id: "allam-2-7b", name: "Allam 2 7B (Groq)", provider: "Groq", category: "Speed", badge: "Multilingual", contextWindow: "32k tokens", requiredKey: "groq" },
 
   // 7. Alibaba Cloud (Qwen)
   { id: "qwen-2.5-coder-32b", name: "Qwen 2.5 Coder 32B", provider: "Alibaba Cloud", category: "Coding", badge: "Open Champion", contextWindow: "128k tokens", requiredKey: "qwen" },
@@ -533,17 +536,50 @@ export default function AiWorkspace() {
     }
   };
 
-  // Helper: Is a model available based strictly on whether user configured its key?
+  // Rate Limited Models tracking
+  const [rateLimitedModels, setRateLimitedModels] = useState<Set<string>>(new Set());
+  const [verifiedModelsByProvider, setVerifiedModelsByProvider] = useState<Record<string, string[]>>({});
+
+  // Verify models dynamically against provider APIs
+  useEffect(() => {
+    if (Object.keys(apiKeys).length > 0) {
+      fetch("/api/models/available", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customKeys: apiKeys }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success && data.availableByProvider) {
+            setVerifiedModelsByProvider(data.availableByProvider);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [apiKeys]);
+
+  // Helper: Is a model available based strictly on valid key, verified status, and not rate limited?
   const isModelAvailable = (model: ModelDefinition): boolean => {
     if (!model || !model.requiredKey) return false;
+    if (rateLimitedModels.has(model.id)) return false;
     const keyVal = apiKeys[model.requiredKey];
-    return Boolean(keyVal && typeof keyVal === "string" && keyVal.trim().length > 5);
+    if (!keyVal || typeof keyVal !== "string" || keyVal.trim().length <= 5) return false;
+
+    if (verifiedModelsByProvider[model.requiredKey]) {
+      const activeList = verifiedModelsByProvider[model.requiredKey];
+      if (activeList.length === 0) return false;
+      if (model.requiredKey === "gemini") {
+        const cleanId = model.id.replace("-exp", "").replace("-latest", "");
+        return activeList.some((m) => m.includes(cleanId) || cleanId.includes(m) || m.includes("gemini"));
+      }
+    }
+    return true;
   };
 
-  // List of ONLY available models (configured with keys)
+  // List of ONLY available models (configured with verified keys and not rate limited)
   const availableModelsList = useMemo(() => {
     return ALL_MODELS.filter((m) => isModelAvailable(m));
-  }, [apiKeys]);
+  }, [apiKeys, rateLimitedModels, verifiedModelsByProvider]);
 
   // Set active model to first available model if current one is not available
   useEffect(() => {
@@ -806,6 +842,36 @@ export default function AiWorkspace() {
     const textToSend = customPromptText || prompt;
     if ((!textToSend.trim() && uploadedDocs.length === 0) || isLoading) return;
 
+    const lowerText = textToSend.toLowerCase();
+    const isGenerateProblemRequest =
+      activeMode === "Generate Problem" ||
+      lowerText.startsWith("construct an interactive") ||
+      lowerText.startsWith("generate a problem") ||
+      lowerText.startsWith("generate problem") ||
+      lowerText.startsWith("create a problem") ||
+      lowerText.startsWith("create problem") ||
+      lowerText.startsWith("build a problem") ||
+      lowerText.includes("problem specification") ||
+      lowerText.includes("generate an algorithm problem") ||
+      lowerText.includes("generate a dsa problem") ||
+      lowerText.includes("construct a competitive programming problem");
+
+    // Save prompt & generation params
+    try {
+      sessionStorage.setItem("easycode_live_generate_prompt", textToSend);
+      sessionStorage.setItem("easycode_live_generate_diff", difficulty);
+      sessionStorage.setItem("easycode_live_generate_topic", selectedTopic || "Algorithms");
+      sessionStorage.setItem("easycode_live_generate_model", activeModel || "gemini-3.6-flash");
+    } catch (e) {}
+
+    saveHistoryItem(textToSend, difficulty, selectedTopic);
+
+    // If asking for a problem generation, immediately navigate to Problem Page with live Gamma builder
+    if (isGenerateProblemRequest) {
+      window.location.href = `/problem/new?generate=true&prompt=${encodeURIComponent(textToSend)}&difficulty=${encodeURIComponent(difficulty)}&topic=${encodeURIComponent(selectedTopic || "Algorithms")}&model=${encodeURIComponent(activeModel || "gemini-3.6-flash")}`;
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -817,16 +883,6 @@ export default function AiWorkspace() {
     setPrompt("");
     const docsToSend = [...uploadedDocs];
     setUploadedDocs([]);
-
-    saveHistoryItem(textToSend, difficulty, selectedTopic);
-
-    // Save prompt & generation params in case user opens problem page later
-    try {
-      sessionStorage.setItem("easycode_live_generate_prompt", textToSend);
-      sessionStorage.setItem("easycode_live_generate_diff", difficulty);
-      sessionStorage.setItem("easycode_live_generate_topic", selectedTopic || "Algorithms");
-      sessionStorage.setItem("easycode_live_generate_model", activeModel || "gemini-2.5-flash");
-    } catch (e) {}
 
     setIsLoading(true);
     const controller = new AbortController();
@@ -851,6 +907,9 @@ export default function AiWorkspace() {
       });
 
       const data = await res.json();
+      if (data?.isRateLimited && data?.rateLimitedModel) {
+        setRateLimitedModels((prev) => new Set([...prev, data.rateLimitedModel]));
+      }
       const assistantText = data?.output || "I'm EasyCode AI. How can I help you code, analyze algorithms, or design software today?";
 
       // Helper: parse code block if single clean code block
@@ -888,7 +947,7 @@ export default function AiWorkspace() {
           {
             id: (Date.now() + 1).toString(),
             role: "assistant",
-            content: `Hello! I'm EasyCode AI. You asked: "${textToSend}". Please make sure your API key is configured in Settings & API Keys.`,
+            content: `❌ **Error**: \`${err?.message || "Failed to communicate with AI server"}\`\n\n*Please verify your API key and connection settings in Settings (⚙️).*`,
           },
         ]);
       }
@@ -1392,7 +1451,23 @@ export default function AiWorkspace() {
                         )}
 
                         {msg.role === "assistant" && !msg.generatedProblem && (
-                          <div className="mt-2.5 pt-1.5 border-t border-black/[0.04] dark:border-white/[0.04] flex items-center justify-end gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                          <div className="mt-2.5 pt-1.5 border-t border-black/[0.04] dark:border-white/[0.04] flex items-center justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                            {/* Solve in Problem Editor button if problem content detected */}
+                            {(msg.content.includes("# Problem") || msg.content.includes("Problem Description") || msg.content.includes("Difficulty:")) ? (
+                              <button
+                                onClick={() => {
+                                  try {
+                                    sessionStorage.setItem("easycode_live_generate_prompt", msg.content);
+                                  } catch (e) {}
+                                  window.location.href = `/problem/new?generate=true&prompt=${encodeURIComponent(msg.content.substring(0, 150))}`;
+                                }}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] hover:opacity-90 transition-opacity font-medium text-[11px] cursor-pointer shadow-2xs"
+                              >
+                                <Zap className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                <span>Solve in Problem Editor ↗</span>
+                              </button>
+                            ) : <div />}
+
                             {/* Copy Text */}
                             <button
                               onClick={() => copyText(msg.content, msg.id)}

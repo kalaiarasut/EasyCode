@@ -147,13 +147,17 @@ export default function ProblemPage() {
     const paramPrompt = searchParams?.get("prompt");
     const paramDiff = (searchParams?.get("difficulty") || "Medium") as "Easy" | "Medium" | "Hard";
     const paramTopic = searchParams?.get("topic") || "Algorithms";
+    const paramModel = searchParams?.get("model");
 
     let storedPrompt = "";
+    let storedModel = "gemini-3.6-flash";
     try {
       storedPrompt = sessionStorage.getItem("easycode_live_generate_prompt") || "";
+      storedModel = sessionStorage.getItem("easycode_live_generate_model") || "gemini-3.6-flash";
     } catch (e) {}
 
     const activePrompt = paramPrompt || storedPrompt;
+    const activeModel = paramModel || storedModel || "gemini-3.6-flash";
 
     if (isGenerateParam && activePrompt) {
       // Clear stored prompt so it doesn't trigger repeatedly on reload
@@ -180,7 +184,7 @@ export default function ProblemPage() {
               difficulty: paramDiff,
               topic: paramTopic,
               focus: "Generate Problem",
-              model: "gemini-2.5-flash",
+              model: activeModel,
               customKeys: apiKeys,
             }),
           });
@@ -206,7 +210,15 @@ export default function ProblemPage() {
   // Fetch problem details for static problems
   useEffect(() => {
     const fetchProblemDetails = async () => {
-      if (!mounted || !problemId || searchParams?.get("generate") === "true") return;
+      if (
+        !mounted ||
+        !problemId ||
+        problemId === "new" ||
+        problemId === "generate" ||
+        problemId === "c0000000-0000-0000-0000-000000000001" ||
+        searchParams?.get("generate") === "true"
+      )
+        return;
 
       try {
         const parsedData = mongodbObjectId.safeParse(problemId);
@@ -423,7 +435,13 @@ export default function ProblemPage() {
                 onCloseAskAi={handleCloseAskAi}
               />
               <div className="flex-1 overflow-y-auto min-h-0 bg-white dark:bg-[#1a1a1a]">
-                {!problemInfo && !liveGeneratedProblem && (
+                {(liveGeneratedProblem || isLiveGenerating) && currentTab === "description" ? (
+                  <GammaProblemCanvas
+                    problem={liveGeneratedProblem}
+                    isGenerating={isLiveGenerating}
+                    onSolveInEditor={handleApplyGeneratedProblem}
+                  />
+                ) : !problemInfo && !liveGeneratedProblem ? (
                   <div className="p-6 space-y-4">
                     <Skeleton className="h-7 w-48 rounded-md" />
                     <div className="flex gap-2">
@@ -434,14 +452,7 @@ export default function ProblemPage() {
                     <Skeleton className="h-32 w-full rounded-md mt-6" />
                     <Skeleton className="h-28 w-full rounded-md mt-4" />
                   </div>
-                )}
-                {liveGeneratedProblem && currentTab === "description" && (
-                  <GammaProblemCanvas
-                    problem={liveGeneratedProblem}
-                    isGenerating={isLiveGenerating}
-                    onSolveInEditor={handleApplyGeneratedProblem}
-                  />
-                )}
+                ) : null}
                 {!liveGeneratedProblem && problemInfo && currentTab === "description" && (
                   <ProblemPageDescription problemInfo={problemInfo} session={session} />
                 )}
@@ -551,7 +562,13 @@ export default function ProblemPage() {
                 onCloseAskAi={handleCloseAskAi}
               />
               <div className="flex-1 overflow-y-auto min-h-0 bg-white dark:bg-[#1a1a1a]">
-                {!problemInfo && !liveGeneratedProblem && (
+                {(liveGeneratedProblem || isLiveGenerating) && currentTab === "description" ? (
+                  <GammaProblemCanvas
+                    problem={liveGeneratedProblem}
+                    isGenerating={isLiveGenerating}
+                    onSolveInEditor={handleApplyGeneratedProblem}
+                  />
+                ) : !problemInfo && !liveGeneratedProblem ? (
                   <div className="p-6 space-y-4">
                     <Skeleton className="h-7 w-48 rounded-md" />
                     <div className="flex gap-2">
@@ -562,14 +579,7 @@ export default function ProblemPage() {
                     <Skeleton className="h-32 w-full rounded-md mt-6" />
                     <Skeleton className="h-28 w-full rounded-md mt-4" />
                   </div>
-                )}
-                {liveGeneratedProblem && currentTab === "description" && (
-                  <GammaProblemCanvas
-                    problem={liveGeneratedProblem}
-                    isGenerating={isLiveGenerating}
-                    onSolveInEditor={handleApplyGeneratedProblem}
-                  />
-                )}
+                ) : null}
                 {!liveGeneratedProblem && problemInfo && currentTab === "description" && (
                   <ProblemPageDescription problemInfo={problemInfo} session={session} />
                 )}

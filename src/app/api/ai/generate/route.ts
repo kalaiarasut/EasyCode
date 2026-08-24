@@ -2,6 +2,70 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from "@/lib/supabaseClient";
 
+async function resolveWorkingGeminiModel(
+  apiKey: string,
+  preferredModel: string
+): Promise<{ modelName: string; availableModels: string[]; error?: string }> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      { method: "GET" }
+    );
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const msg = errData?.error?.message || `Google API error (Status ${res.status}): ${res.statusText}`;
+      return { modelName: "", availableModels: [], error: msg };
+    }
+
+    const data = await res.json();
+    const models: any[] = data.models || [];
+    const supported = models
+      .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m: any) => m.name.replace(/^models\//, ""));
+
+    if (supported.length === 0) {
+      return {
+        modelName: "",
+        availableModels: [],
+        error: "Your Google API key has no models enabled for generateContent. Please ensure 'Generative Language API' is enabled on your project in Google Cloud / Google AI Studio.",
+      };
+    }
+
+    if (supported.includes(preferredModel)) {
+      return { modelName: preferredModel, availableModels: supported };
+    }
+
+    const cleanPreferred = preferredModel.replace("-exp", "").replace("-latest", "").replace("-001", "").replace("-002", "");
+    const match = supported.find((m) => m.includes(cleanPreferred) || cleanPreferred.includes(m));
+    if (match) {
+      return { modelName: match, availableModels: supported };
+    }
+
+    const priorityList = [
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-exp",
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-latest",
+      "gemini-1.5-pro",
+      "gemini-1.5-pro-latest",
+      "gemini-2.0-flash-thinking-exp-01-21",
+      "gemini-2.0-flash-thinking-exp",
+      "gemini-2.0-pro-exp-02-05",
+      "gemini-pro",
+    ];
+
+    for (const p of priorityList) {
+      if (supported.includes(p)) {
+        return { modelName: p, availableModels: supported };
+      }
+    }
+
+    return { modelName: supported[0], availableModels: supported };
+  } catch (e: any) {
+    return { modelName: preferredModel, availableModels: [], error: e?.message || String(e) };
+  }
+}
+
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
@@ -10,7 +74,7 @@ export async function POST(req: NextRequest) {
             difficulty = "Medium",
             topic = "Algorithms",
             focus = "Generate Problem",
-            model = "gemini-2.5-flash",
+            model = "gemini-3.6-flash",
             customInstructions = "",
             customKeys = {},
             memories = []
@@ -129,27 +193,39 @@ Generate a complete, high-quality LeetCode-style challenge matching this exact J
             const apiKey = customKeys.gemini || process.env.GEMINI_API_KEY;
             if (apiKey && !apiKey.startsWith("your_") && apiKey.length > 5) {
                 try {
-                    const ai = new GoogleGenAI({ apiKey });
-                    let candidates = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
-                    if (model.includes("2.5-pro")) candidates = ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-2.0-flash"];
-                    else if (model.includes("thinking")) candidates = ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-thinking-exp", "gemini-2.0-flash"];
-                    else if (model.includes("1.5-pro")) candidates = ["gemini-1.5-pro", "gemini-2.0-flash"];
-                    else if (model.includes("1.5-flash")) candidates = ["gemini-1.5-flash", "gemini-2.0-flash"];
-
-                    for (const targetModel of candidates) {
+                    const { modelName: activeGeminiModel, error: geminiResolveErr } = await resolveWorkingGeminiModel(apiKey, model);
+                    if (activeGeminiModel) {
+                        const ai = new GoogleGenAI({ apiKey });
                         try {
                             const response = await ai.models.generateContent({
-                                model: targetModel,
+                                model: activeGeminiModel,
                                 contents: systemPrompt
                             });
                             const text = response.text || "";
                             const cleanJson = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
                             if (cleanJson) {
                                 generatedProblem = JSON.parse(cleanJson);
-                                break;
                             }
-                        } catch (e) {
-                            console.warn(`Gemini candidate ${targetModel} failed in unary generate, trying next...`);
+                        } catch (sdkErr) {
+                            // Direct REST fallback
+                            const restRes = await fetch(
+                                `https://generativelanguage.googleapis.com/v1beta/models/${activeGeminiModel}:generateContent?key=${apiKey}`,
+                                {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        contents: [{ parts: [{ text: systemPrompt }] }],
+                                    }),
+                                }
+                            );
+                            if (restRes.ok) {
+                                const data = await restRes.json();
+                                const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                                const cleanJson = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                                if (cleanJson) {
+                                    generatedProblem = JSON.parse(cleanJson);
+                                }
+                            }
                         }
                     }
                 } catch (err) {
