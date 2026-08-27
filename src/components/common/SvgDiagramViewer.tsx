@@ -34,6 +34,123 @@ export default function SvgDiagramViewer({
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const containerRef = useRef<HTMLDivElement>(null);
 
+// Advanced SVG Layout & Text Collision Auto-Healer
+function healSvgCollisions(svgString: string): string {
+  if (typeof window === "undefined" || !svgString) return svgString;
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgString, "image/svg+xml");
+    if (doc.querySelector("parsererror")) {
+      return svgString;
+    }
+
+    const svgEl = doc.querySelector("svg");
+    if (!svgEl) return svgString;
+
+    const allTexts = Array.from(doc.querySelectorAll("text"));
+    const allRects = Array.from(doc.querySelectorAll("rect"));
+
+    // Find step headers ("Step 1", "Step 2", etc.)
+    const stepHeaders = allTexts.filter((t) => /Step\s+\d+/i.test(t.textContent || ""));
+
+    if (stepHeaders.length > 0) {
+      let cumulativeExtraHeight = 0;
+
+      stepHeaders.forEach((stepHeader, sIdx) => {
+        const stepHeaderY = parseFloat(stepHeader.getAttribute("y") || "0");
+        const nextStepHeaderY = stepHeaders[sIdx + 1]
+          ? parseFloat(stepHeaders[sIdx + 1].getAttribute("y") || "99999")
+          : 99999;
+
+        // Collect all text elements belonging to this step
+        const stepTexts = allTexts.filter((t) => {
+          const y = parseFloat(t.getAttribute("y") || "0");
+          return y >= stepHeaderY - 15 && y < nextStepHeaderY;
+        });
+
+        // Find condition/subtitle text
+        const conditionText = stepTexts.find((t) =>
+          /Condition:|Target|Narrow|Search range|Comparing/i.test(t.textContent || "")
+        );
+
+        // Find index labels: [0], [1], [2], etc.
+        const indexTexts = stepTexts.filter((t) =>
+          /^\[?\d+\]?$/.test(t.textContent?.trim() || "") && parseFloat(t.getAttribute("font-size") || "14") <= 12
+        );
+
+        if (conditionText && indexTexts.length > 0) {
+          const condY = parseFloat(conditionText.getAttribute("y") || "0");
+          const firstIndexY = parseFloat(indexTexts[0].getAttribute("y") || "0");
+
+          // Collision detected if condition and indices are vertically within 28px!
+          if (Math.abs(condY - firstIndexY) < 28) {
+            const shiftAmount = 28;
+            cumulativeExtraHeight += shiftAmount;
+
+            // 1. Shift all index labels down
+            indexTexts.forEach((it) => {
+              const curY = parseFloat(it.getAttribute("y") || "0");
+              it.setAttribute("y", String(curY + shiftAmount));
+            });
+
+            // 2. Shift all rects (cells, badges) in this step down
+            const stepRects = allRects.filter((r) => {
+              const y = parseFloat(r.getAttribute("y") || "0");
+              const h = parseFloat(r.getAttribute("height") || "0");
+              // Exclude outer background/card rects (height > 90)
+              return y >= condY - 15 && y < nextStepHeaderY && h < 90;
+            });
+
+            stepRects.forEach((r) => {
+              const curY = parseFloat(r.getAttribute("y") || "0");
+              r.setAttribute("y", String(curY + shiftAmount));
+            });
+
+            // 3. Shift remaining text elements (cell numbers, pointer text LOW, MID, HIGH) down
+            const otherTexts = stepTexts.filter(
+              (t) => t !== stepHeader && t !== conditionText && !indexTexts.includes(t)
+            );
+
+            otherTexts.forEach((ot) => {
+              const curY = parseFloat(ot.getAttribute("y") || "0");
+              ot.setAttribute("y", String(curY + shiftAmount));
+            });
+
+            // 4. Expand step container card if present
+            const stepCard = allRects.find((r) => {
+              const y = parseFloat(r.getAttribute("y") || "0");
+              const h = parseFloat(r.getAttribute("height") || "0");
+              return y <= stepHeaderY && y + h >= condY && h >= 90;
+            });
+            if (stepCard) {
+              const curH = parseFloat(stepCard.getAttribute("height") || "150");
+              stepCard.setAttribute("height", String(curH + shiftAmount));
+            }
+          }
+        }
+      });
+
+      // Expand viewBox height if cards were shifted
+      if (cumulativeExtraHeight > 0) {
+        const viewBox = svgEl.getAttribute("viewBox");
+        if (viewBox) {
+          const parts = viewBox.split(/[\s,]+/).map(Number);
+          if (parts.length === 4) {
+            svgEl.setAttribute(
+              "viewBox",
+              `${parts[0]} ${parts[1]} ${parts[2]} ${parts[3] + cumulativeExtraHeight + 20}`
+            );
+          }
+        }
+      }
+    }
+
+    return new XMLSerializer().serializeToString(doc);
+  } catch (e) {
+    return svgString;
+  }
+}
+
   // Extract clean SVG content and normalize for full responsive container display
   const cleanSvg = React.useMemo(() => {
     let raw = svgCode.trim();
@@ -61,12 +178,8 @@ export default function SvgDiagramViewer({
       svgStr = svgStr.replace(/<svg\b/i, '<svg preserveAspectRatio="xMidYMid meet" ');
     }
 
-    // Heuristic collision healer: prevent index labels [0], [1] from colliding with condition subtitles
-    // If a <text> contains "[0]" and its y attribute is identical (+- 10px) to a preceding text, bump it down
-    svgStr = svgStr.replace(
-      /(<text[^>]*>Step[^<]*<\/text>[\s\S]*?<text[^>]*>Condition:[^<]*<\/text>[\s\S]*?<text[^>]*y=["'])(1[1-4][0-9])(["'][^>]*>\[0\])/gi,
-      (match, p1, p2, p3) => `${p1}${parseInt(p2, 10) + 32}${p3}`
-    );
+    // Run DOM-based collision auto-healer
+    svgStr = healSvgCollisions(svgStr);
 
     return svgStr;
   }, [svgCode]);

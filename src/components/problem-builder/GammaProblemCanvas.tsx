@@ -135,7 +135,8 @@ function OceanicActiveSection({
             transition={{ duration: 1.4, repeat: Infinity }}
             className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"
           />
-          <span>✨ Agent Synthesizing: {stageLabel}</span>
+          <Sparkles className="w-3 h-3 text-emerald-500" />
+          <span>Agent Synthesizing: {stageLabel}</span>
         </motion.div>
       )}
 

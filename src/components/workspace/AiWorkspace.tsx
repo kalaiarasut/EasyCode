@@ -59,6 +59,7 @@ import {
   Network,
   Trash2,
   ArrowDown,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
@@ -67,6 +68,8 @@ import GammaProblemCanvas from "../problem-builder/GammaProblemCanvas";
 import AiMediaCard from "@/components/common/AiMediaCard";
 import MermaidFlowchartViewer from "@/components/common/MermaidFlowchartViewer";
 import SvgDiagramViewer from "@/components/common/SvgDiagramViewer";
+import InlineMemoryModal, { MemoryInspectItem } from "@/components/common/InlineMemoryModal";
+import ThinkingProcessBlock from "@/components/common/ThinkingProcessBlock";
 import { GeneratedProblem } from "@/types/generatedProblem";
 import { ProviderLogo } from "@/components/common/ProviderLogos";
 import { BUILT_IN_SKILLS, DEFAULT_AI_RULES, AiSkill, AiRule } from "@/types/skillsAndRules";
@@ -323,6 +326,9 @@ export default function AiWorkspace() {
     x: number;
     y: number;
   }>({ visible: false, text: "", x: 0, y: 0 });
+
+  // Inline Memory Inspection Modal (Directly in chat space without forwarding to Settings)
+  const [selectedMemoryToInspect, setSelectedMemoryToInspect] = useState<MemoryInspectItem | null>(null);
   
   // Dropdown States
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -380,6 +386,8 @@ export default function AiWorkspace() {
   const [userHistory, setUserHistory] = useState<HistoryItem[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Claude Spinner Verbs State
@@ -855,9 +863,15 @@ export default function AiWorkspace() {
     }
   }, [messages, isLoading]);
 
-  // Floating Ask AI on Text Selection
+  // Floating Ask AI on Text Selection (Strictly inside chat viewport, NEVER in Settings or Inputs)
   useEffect(() => {
     const handleSelectionChange = () => {
+      // 1. If currently in Settings view, always hide
+      if (activeView === "settings") {
+        setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
         setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
@@ -866,6 +880,22 @@ export default function AiWorkspace() {
 
       const text = selection.toString().trim();
       if (text.length < 3) {
+        setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
+      // 2. Ensure selection is strictly inside the active chat scroll viewport
+      const anchorNode = selection.anchorNode;
+      const focusNode = selection.focusNode;
+      const container = scrollContainerRef.current;
+      if (!container || !anchorNode || !focusNode || !container.contains(anchorNode) || !container.contains(focusNode)) {
+        setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
+      // 3. Ignore if selection is inside an input, textarea, or button
+      const parentEl = anchorNode.parentElement;
+      if (parentEl?.closest("textarea, input, button, [data-no-ask-ai='true']")) {
         setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
         return;
       }
@@ -886,7 +916,7 @@ export default function AiWorkspace() {
 
     document.addEventListener("selectionchange", handleSelectionChange);
     return () => document.removeEventListener("selectionchange", handleSelectionChange);
-  }, []);
+  }, [activeView]);
 
   const handleQuoteSelection = (quotedText: string) => {
     const quote = `> "${quotedText}"\n\n`;
@@ -1138,27 +1168,63 @@ export default function AiWorkspace() {
   const currentModeData = MODE_PROMPT_SUGGESTIONS[activeMode] || MODE_PROMPT_SUGGESTIONS["Generate Problem"];
 
   // Clean LaTeX / Math formulas into readable programming notation
-  const cleanAiMathFormula = (formula: string) => {
+  const cleanAiMathFormula = (formula: string): string => {
+    if (!formula) return "";
     return formula
+      .replace(/\\mathcal\{O\}\(([^)]+)\)/g, "O($1)")
       .replace(/\\mathcal\{O\}/g, "O")
       .replace(/\\mathcal\{([^}]+)\}/g, "$1")
       .replace(/\\mathbb\{R\}/g, "R")
       .replace(/\\mathbb\{Z\}/g, "Z")
+      .replace(/\\mathbb\{N\}/g, "N")
+      .replace(/\\mathbf\{([^}]+)\}/g, "$1")
+      .replace(/\\mathrm\{([^}]+)\}/g, "$1")
       .replace(/\\text\{([^}]+)\}/g, "$1")
+      .replace(/\\texttt\{([^}]+)\}/g, "$1")
+      // Floor & Ceiling notation
+      .replace(/\\lfloor\s*([\s\S]+?)\s*\\rfloor/g, "floor($1)")
+      .replace(/\\lceil\s*([\s\S]+?)\s*\\rceil/g, "ceil($1)")
+      .replace(/\\lfloor\b/g, "floor(")
+      .replace(/\\rfloor\b/g, ")")
+      .replace(/\\lceil\b/g, "ceil(")
+      .replace(/\\rceil\b/g, ")")
+      // Arrows & Progressions
+      .replace(/\\to\b|\\rightarrow\b|\\longrightarrow\b/g, "→")
+      .replace(/\\leftarrow\b|\\longleftarrow\b/g, "←")
+      .replace(/\\leftrightarrow\b/g, "↔")
+      .replace(/\\dots\b|\\ldots\b|\\cdots\b/g, "...")
+      // Logarithms & Subscripts
+      .replace(/\\log_2\b/g, "log₂")
+      .replace(/\\log_\{2\}\b/g, "log₂")
+      .replace(/\\log_([0-9a-zA-Z])/g, "log_$1")
+      .replace(/\\log_\{([^}]+)\}/g, "log_($1)")
+      .replace(/\\log\b/g, "log")
+      .replace(/\\ln\b/g, "ln")
+      // Comparisons & Arithmetic Operators
       .replace(/\\le\b|\\leq\b/g, "<=")
       .replace(/\\ge\b|\\geq\b/g, ">=")
       .replace(/\\ne\b|\\neq\b/g, "!=")
-      .replace(/\\times\b/g, "*")
-      .replace(/\\cdot\b/g, "*")
-      .replace(/\\log\b/g, "log")
+      .replace(/\\approx\b/g, "≈")
+      .replace(/\\pm\b/g, "±")
+      .replace(/\\mp\b/g, "∓")
+      .replace(/\\times\b/g, " * ")
+      .replace(/\\cdot\b/g, " * ")
+      .replace(/\\div\b/g, " / ")
+      .replace(/\\in\b/g, "∈")
+      .replace(/\\notin\b/g, "∉")
+      .replace(/\\infty\b/g, "∞")
       .replace(/\\min\b/g, "min")
       .replace(/\\max\b/g, "max")
-      .replace(/\\sqrt\{([^}]+)\}/g, "sqrt($1)")
+      // Fractions & Roots
       .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, "($1 / $2)")
+      .replace(/\\sqrt\{([^}]+)\}/g, "sqrt($1)")
+      // Brackets & Spacing
+      .replace(/\\left[\[\(\{]/g, "(")
+      .replace(/\\right[\]\)\}]/g, ")")
       .replace(/\\left|\\right/g, "")
-      .replace(/\\,/g, " ")
-      .replace(/\\;/g, " ")
-      .replace(/\\quad/g, " ")
+      .replace(/\\quad\b|\\qquad\b/g, " ")
+      .replace(/\\,|\\;|\\!/g, " ")
+      .replace(/\\_/g, "_")
       .replace(/\{([^{}]+)\}/g, "$1")
       .replace(/\^\{([^}]+)\}/g, "^$1")
       .trim();
@@ -1169,10 +1235,17 @@ export default function AiWorkspace() {
     // 1. Strip emojis to strictly enforce zero-emoji design system
     let cleaned = text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu, "").trim();
 
-    // 2. Replace inline LaTeX math $...$ with clean code badge
-    cleaned = cleaned.replace(/\$([^$\n]+)\$/g, (_, m) => `\`${cleanAiMathFormula(m)}\``);
+    // 2. Replace display and inline LaTeX math $...$ or $$...$$ with clean code badge
+    cleaned = cleaned
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => `\`${cleanAiMathFormula(m)}\``)
+      .replace(/\$([^$\n]+)\$/g, (_, m) => `\`${cleanAiMathFormula(m)}\``)
+      .replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => `\`${cleanAiMathFormula(m)}\``)
+      .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => `\`${cleanAiMathFormula(m)}\``);
 
-    // 3. Tokenize by inline code, bold, italic, links
+    // 3. Also clean any leftover raw LaTeX tokens embedded in plain text
+    cleaned = cleanAiMathFormula(cleaned);
+
+    // 4. Tokenize by inline code, bold, italic, links
     const parts = cleaned.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g);
 
     return parts.map((part, idx) => {
@@ -1266,6 +1339,94 @@ export default function AiWorkspace() {
     while (i < lines.length) {
       const line = lines[i];
       const trimmed = line.trim();
+
+      // Check for <think>...</think> Reasoning / Chain of Thought Block
+      if (trimmed.startsWith("<think>") || (trimmed.includes("<think>") && !trimmed.startsWith("```"))) {
+        const thinkLines: string[] = [];
+        const firstLine = trimmed.replace(/^.*?<think>/i, "").trim();
+        if (firstLine) thinkLines.push(firstLine);
+        i++;
+        let isClosed = false;
+        while (i < lines.length && !lines[i].includes("</think>")) {
+          thinkLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length && lines[i].includes("</think>")) {
+          isClosed = true;
+          const lastLine = lines[i].replace(/<\/think>[\s\S]*$/i, "").trim();
+          if (lastLine) thinkLines.push(lastLine);
+          i++;
+        }
+        const thinkText = thinkLines.join("\n").trim();
+        if (thinkText) {
+          elements.push(
+            <ThinkingProcessBlock
+              key={`think-${i}`}
+              thinkingContent={thinkText}
+              isStreaming={isLoading && !isClosed}
+            />
+          );
+        }
+        continue;
+      }
+
+      // Check for Memory Saved Block (:::memory-saved{...}:::)
+      if (trimmed.includes(":::memory-saved")) {
+        const memMatch = trimmed.match(/:::memory-saved(\{.*?\})(?::::)?/);
+        if (memMatch) {
+          try {
+            const memoryData: MemoryInspectItem = JSON.parse(memMatch[1]);
+            // Automatically persist to localStorage if not exists
+            try {
+              const existing = JSON.parse(localStorage.getItem("easycode_user_memories") || "[]");
+              if (!existing.some((m: any) => m.content.toLowerCase() === memoryData.content.toLowerCase())) {
+                const updatedList = [
+                  {
+                    id: memoryData.id || Date.now().toString(),
+                    content: memoryData.content,
+                    category: memoryData.category || "Goal",
+                    createdAt: "Just now",
+                  },
+                  ...existing,
+                ];
+                localStorage.setItem("easycode_user_memories", JSON.stringify(updatedList));
+                window.dispatchEvent(new Event("easycode_memory_updated"));
+              }
+            } catch (e) {}
+
+            elements.push(
+              <div
+                key={`mem-${i}`}
+                onClick={() => setSelectedMemoryToInspect(memoryData)}
+                className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 hover:border-amber-500/50 text-amber-950 dark:text-amber-100 text-xs font-medium transition-all cursor-pointer select-none my-2.5 shadow-2xs group w-fit max-w-xl"
+                title="Click to view or edit this memory in place"
+              >
+                <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 group-hover:scale-110 transition-transform">
+                  <Brain className="w-3.5 h-3.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wide">
+                      Memory Saved
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 font-mono">
+                      {memoryData.category || "Goal"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-800 dark:text-neutral-200 truncate mt-0.5 font-normal">
+                    {memoryData.content}
+                  </p>
+                </div>
+                <span className="text-[11px] text-amber-700 dark:text-amber-400 underline font-medium opacity-80 group-hover:opacity-100 shrink-0 ml-1">
+                  View &rarr;
+                </span>
+              </div>
+            );
+            i++;
+            continue;
+          } catch (e) {}
+        }
+      }
 
       // Check for Mermaid Code Block (```mermaid ... ```)
       if (trimmed.startsWith("```mermaid")) {
@@ -1445,10 +1606,20 @@ export default function AiWorkspace() {
         continue;
       }
 
-      // Headers (H2, H3, H4)
+      // Headers (H1, H2, H3, H4)
+      if (trimmed.startsWith("# ")) {
+        elements.push(
+          <h1 key={`h1-${i}`} className="text-lg sm:text-xl font-bold text-neutral-950 dark:text-white pt-3 pb-1 tracking-tight font-sans border-b border-black/[0.06] dark:border-white/[0.08]">
+            {formatInlineSpans(trimmed.replace(/^#\s+/, ""))}
+          </h1>
+        );
+        i++;
+        continue;
+      }
+
       if (trimmed.startsWith("## ")) {
         elements.push(
-          <h2 key={`h2-${i}`} className="text-base font-bold text-neutral-900 dark:text-white pt-3 pb-1 tracking-tight">
+          <h2 key={`h2-${i}`} className="text-base sm:text-lg font-bold text-neutral-900 dark:text-neutral-50 pt-2.5 pb-1 tracking-tight font-sans">
             {formatInlineSpans(trimmed.replace(/^##\s+/, ""))}
           </h2>
         );
@@ -1543,8 +1714,22 @@ export default function AiWorkspace() {
     }
   };
 
-  const handleSend = async (customPromptText?: string) => {
-    const textToSend = customPromptText || prompt;
+  const handleSaveEditedMessage = (msgId: string) => {
+    if (!editingText.trim() || isLoading) return;
+    const msgIndex = messages.findIndex((m) => m.id === msgId);
+    if (msgIndex === -1) return;
+
+    // Reset / fork conversation history to this point (truncate all messages from msgIndex onwards)
+    const trimmedMessages = messages.slice(0, msgIndex);
+    const newText = editingText;
+    setEditingMessageId(null);
+    setEditingText("");
+
+    handleSend(newText, trimmedMessages);
+  };
+
+  const handleSend = async (customPromptText?: string, overrideMessages?: Message[]) => {
+    const textToSend = customPromptText !== undefined ? customPromptText : prompt;
     if ((!textToSend.trim() && uploadedDocs.length === 0) || isLoading) return;
 
     isUserAtBottomRef.current = true;
@@ -1637,6 +1822,8 @@ export default function AiWorkspace() {
       setCurrentSessionId(sessionId);
     }
 
+    const baseMessages = overrideMessages !== undefined ? overrideMessages : messages;
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -1652,7 +1839,8 @@ export default function AiWorkspace() {
       modelUsed: activeModel,
     };
 
-    setMessages((prev) => [...prev, userMessage, initialAssistantMsg]);
+    const nextMessages = [...baseMessages, userMessage, initialAssistantMsg];
+    setMessages(nextMessages);
     setStreamingMessageId(assistantId);
     setPrompt("");
     const docsToSend = [...uploadedDocs];
@@ -1666,6 +1854,11 @@ export default function AiWorkspace() {
     let finalModelUsed = activeModel;
 
     try {
+      let loadedMemories: any[] = [];
+      try {
+        loadedMemories = JSON.parse(localStorage.getItem("easycode_user_memories") || "[]");
+      } catch (e) {}
+
       const willStream = !isImageQuery && !isVideoQuery;
       const res = await fetch("/api/code/chat-output", {
         method: "POST",
@@ -1673,6 +1866,7 @@ export default function AiWorkspace() {
         signal: controller.signal,
         body: JSON.stringify({
           inputMessage: textToSend,
+          messages: baseMessages.map((m) => ({ role: m.role, content: m.content })),
           model: activeModel || "auto",
           visualEngine: activeVisualEngine,
           customKeys: apiKeys,
@@ -1682,6 +1876,7 @@ export default function AiWorkspace() {
           problemInfo: selectedTopic ? { title: selectedTopic, level: difficulty } : null,
           skills: skills,
           rules: rules,
+          memories: loadedMemories,
           stream: willStream,
         }),
       });
@@ -1783,7 +1978,7 @@ export default function AiWorkspace() {
         const errorMsg: Message = {
           id: assistantId,
           role: "assistant",
-          content: `❌ **Error**: \`${err?.message || "Failed to communicate with AI server"}\`\n\n*Please verify your API key and connection settings in Settings (⚙️).*`,
+          content: `**Error**: \`${err?.message || "Failed to communicate with AI server"}\`\n\n*Please verify your API key and connection settings in Settings.*`,
           modelUsed: finalModelUsed,
         };
         setMessages((prev) => {
@@ -3024,9 +3219,96 @@ export default function AiWorkspace() {
                               )}
                             </div>
                           ) : msg.role === "user" ? (
-                            <p className="whitespace-pre-wrap font-sans text-xs sm:text-sm text-white dark:text-[#EDEDEB] leading-relaxed select-text">
-                              {msg.content}
-                            </p>
+                            editingMessageId === msg.id ? (
+                              <div className="w-full min-w-[280px] sm:min-w-[420px] max-w-xl space-y-2.5 p-3.5 rounded-2xl bg-[#1C1B19] dark:bg-[#2A2826] border border-white/10 text-white shadow-xl animate-in fade-in zoom-in-98 duration-150">
+                                <textarea
+                                  ref={(el) => {
+                                    if (el) {
+                                      el.style.height = "auto";
+                                      el.style.height = `${el.scrollHeight}px`;
+                                    }
+                                  }}
+                                  value={editingText}
+                                  onChange={(e) => {
+                                    setEditingText(e.target.value);
+                                    e.target.style.height = "auto";
+                                    e.target.style.height = `${e.target.scrollHeight}px`;
+                                  }}
+                                  className="w-full bg-black/40 text-white dark:text-[#EDEDEB] p-2.5 rounded-xl border border-white/15 outline-hidden text-xs sm:text-sm font-sans resize-none overflow-hidden focus:border-white/30 focus:outline-hidden focus:ring-0 transition-all leading-relaxed"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    const isChanged = editingText.trim() !== msg.content.trim();
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                      e.preventDefault();
+                                      if (isChanged && editingText.trim() && !isLoading) {
+                                        handleSaveEditedMessage(msg.id);
+                                      }
+                                    } else if (e.key === "Escape") {
+                                      setEditingMessageId(null);
+                                    }
+                                  }}
+                                />
+                                <div className="flex items-center justify-end gap-2 pt-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingMessageId(null)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={editingText.trim() === msg.content.trim() || !editingText.trim() || isLoading}
+                                    onClick={() => {
+                                      if (editingText.trim() !== msg.content.trim() && editingText.trim() && !isLoading) {
+                                        handleSaveEditedMessage(msg.id);
+                                      }
+                                    }}
+                                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs ${
+                                      editingText.trim() !== msg.content.trim() && editingText.trim() && !isLoading
+                                        ? "bg-white text-[#1C1B19] dark:bg-[#EDEDEB] dark:text-[#1C1B19] hover:opacity-90 active:scale-95 cursor-pointer"
+                                        : "bg-white/15 text-white/40 dark:bg-white/10 dark:text-white/30 cursor-not-allowed"
+                                    }`}
+                                    title={
+                                      editingText.trim() === msg.content.trim()
+                                        ? "Make a change to resend and reset the conversation"
+                                        : "Resend prompt and regenerate conversation from this point"
+                                    }
+                                  >
+                                    Resend
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="group/user relative">
+                                <p className="whitespace-pre-wrap font-sans text-xs sm:text-sm text-white dark:text-[#EDEDEB] leading-relaxed select-text">
+                                  {msg.content}
+                                </p>
+
+                                {/* Floating Hover Action Bar: Edit & Reset, Copy */}
+                                <div className="absolute -bottom-7 right-0 opacity-0 group-hover/user:opacity-100 transition-opacity flex items-center gap-1.5 py-0.5 px-2 rounded-lg bg-[#1C1B19]/95 dark:bg-[#2A2826]/95 backdrop-blur-xs border border-white/10 shadow-lg text-[11px] text-neutral-300 z-20">
+                                  <button
+                                    onClick={() => {
+                                      setEditingMessageId(msg.id);
+                                      setEditingText(msg.content);
+                                    }}
+                                    className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer py-0.5 px-1 rounded hover:bg-white/10"
+                                    title="Edit prompt and reset conversation to this point"
+                                  >
+                                    <Pencil className="w-3 h-3 text-amber-400" />
+                                    <span>Edit</span>
+                                  </button>
+                                  <span className="opacity-30">|</span>
+                                  <button
+                                    onClick={() => copyText(msg.content, msg.id)}
+                                    className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer py-0.5 px-1 rounded hover:bg-white/10"
+                                    title="Copy prompt"
+                                  >
+                                    {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                  </button>
+                                </div>
+                              </div>
+                            )
                           ) : (
                             /* Assistant message with live streaming token cursor support */
                             <div className="relative">
@@ -3038,12 +3320,10 @@ export default function AiWorkspace() {
                                   )}
                                 </>
                               ) : (
-                                <div className="flex items-center text-xs font-mono select-none py-1">
-                                  <span className="shimmer font-medium">{currentVerb}</span>
-                                  <span className="text-neutral-500 font-bold tracking-widest ml-0.5 inline-block min-w-[20px] text-left">
-                                    {DOT_SEQUENCE[dotIndex]}
-                                  </span>
-                                </div>
+                                <ThinkingProcessBlock
+                                  thinkingContent="Synthesizing algorithmic logic and formulating solution..."
+                                  isStreaming={true}
+                                />
                               )}
                             </div>
                           )}
@@ -3134,24 +3414,32 @@ export default function AiWorkspace() {
 
               </div>
 
-              {/* Floating Scroll-to-Bottom Pill Button */}
-              {showScrollBottom && (
-                <div className="absolute bottom-28 inset-x-0 flex justify-center pointer-events-none z-35">
-                  <button
-                    onClick={scrollToBottom}
-                    className="pointer-events-auto px-3.5 py-1.5 rounded-full bg-[#1C1B19] text-white dark:bg-[#EDEDEB] dark:text-[#1C1B19] text-xs font-medium shadow-lg hover:opacity-90 transition-all flex items-center gap-1.5 cursor-pointer animate-in fade-in slide-in-from-bottom-2"
-                  >
-                    <ArrowDown className="w-3.5 h-3.5" />
-                    <span>Scroll to bottom</span>
-                  </button>
-                </div>
-              )}
-
               {/* DOCKED FLOATING PROMPT BOX AT BOTTOM (ChatGPT style) - Stays fixed floating above responses */}
               {messages.length > 0 && (
                 <div className="absolute bottom-0 inset-x-0 flex flex-col items-center px-4 pb-4 pt-6 bg-gradient-to-t from-[#FBF9F4] via-[#FBF9F4]/90 to-transparent dark:from-[#1C1B19] dark:via-[#1C1B19]/90 dark:to-transparent z-30 pointer-events-none">
                   <div className="w-full max-w-2xl pointer-events-auto">
                     {renderPromptBox()}
+                  </div>
+                </div>
+              )}
+
+              {/* Floating Scroll-to-Bottom Button (Fixed at Bottom-Right of the Page) */}
+              {showScrollBottom && (
+                <div className="fixed bottom-7 right-7 md:bottom-8 md:right-8 z-40 animate-in fade-in zoom-in-90 duration-200">
+                  <div className="relative group">
+                    <button
+                      onClick={scrollToBottom}
+                      className="flex items-center justify-center w-11 h-11 md:w-12 md:h-12 rounded-full bg-[#1C1B19] dark:bg-[#EDEDEB] text-white dark:text-[#1C1B19] border border-black/10 dark:border-white/15 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                      aria-label="Scroll to bottom"
+                    >
+                      <ArrowDown className="w-5 h-5 transition-transform group-hover:translate-y-0.5" />
+                    </button>
+
+                    {/* Sleek Tooltip on hover */}
+                    <div className="absolute bottom-full right-0 mb-2 px-3 py-1.5 rounded-xl bg-[#1C1B19] dark:bg-[#EDEDEB] text-white dark:text-[#1C1B19] text-xs font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-150 shadow-2xl scale-95 group-hover:scale-100 origin-bottom-right">
+                      Scroll to bottom
+                      <span className="absolute top-full right-4 -mt-1 border-4 border-transparent border-t-[#1C1B19] dark:border-t-[#EDEDEB]" />
+                    </div>
                   </div>
                 </div>
               )}
@@ -3194,6 +3482,21 @@ export default function AiWorkspace() {
             <Copy className="w-3.5 h-3.5" />
           </button>
         </div>
+      )}
+
+      {/* Inline Memory Inspection & Editing Modal (In-space without forwarding to Settings) */}
+      {selectedMemoryToInspect && (
+        <InlineMemoryModal
+          memory={selectedMemoryToInspect}
+          onClose={() => setSelectedMemoryToInspect(null)}
+          onUpdate={(updated) => {
+            setSelectedMemoryToInspect(null);
+            toast.success("Memory entry updated");
+          }}
+          onDelete={() => {
+            setSelectedMemoryToInspect(null);
+          }}
+        />
       )}
 
     </div>

@@ -98,14 +98,15 @@ export const BUILT_IN_SKILLS: AiSkill[] = [
    - Take the entire horizontal space: Array cells and elements should be balanced and fill the container width.
 3. SPACING & STRICT VERTICAL TIERS (Strictly prevent overlapping text):
    - For Step-by-Step execution traces (e.g. Binary Search, Two Pointers, Array Traces):
-     Every step MUST occupy a 190px vertical band (baseY = 80 + stepIndex * 190):
-     * y = baseY + 20: Step Header text ("Step 1: low = 0, high = 9 | mid = 4")
-     * y = baseY + 45: Explanation / condition subtitle ("Condition: 16 < 23 -> Narrow search to right half")
-     * y = baseY + 72: Array index labels "[0]", "[1]", "[2]" ... (font-size="11", fill="#8C877D")
-     * y = baseY + 84: Array cell boxes (<rect y="..." height="42" ...>)
-     * y = baseY + 110: Array numbers inside boxes (font-size="14", text-anchor="middle")
-     * y = baseY + 138: Pointer badges LOW, MID, HIGH (pill rects at y="..." height="20" rx="4", text at y="...")
-   - CRITICAL PROHIBITION: NEVER place condition subtitles, index labels [0], and pointer badges at the same Y coordinate! Every tier MUST have at least 25px vertical separation.
+     Every step MUST occupy a 210px vertical band (baseY = 90 + stepIndex * 210):
+     * Step Container Card: <rect x="30" y="\${baseY}" width="900" height="190" rx="12" ... />
+     * y = baseY + 28: Step Header text ("Step 1: low = 0, high = 9 | mid = 4 (Value = 16)")
+     * y = baseY + 54: Explanation / condition subtitle ("Condition: 16 < 23 -> Narrow search to right half")
+     * y = baseY + 86: Array index labels "[0]", "[1]", "[2]" ... (font-size="11", fill="#8C877D")
+     * y = baseY + 98: Array cell boxes (<rect y="..." height="40" ...>)
+     * y = baseY + 124: Array numbers inside boxes (font-size="14", text-anchor="middle")
+     * y = baseY + 154: Pointer badges LOW, MID, HIGH (pill rects at y="..." height="22" rx="4", text at y="...")
+   - CRITICAL PROHIBITION: NEVER place condition subtitles, index labels [0], and pointer badges at the same Y coordinate! Every tier MUST have distinct vertical separation.
    - Pointer badges (Low, Mid, High) MUST be rendered as rounded pills (rx="4") with sufficient padding so text never collides or overlaps with numbers or lines.
 4. VECTOR CRAFT:
    - Typography: font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" for headers & labels; font-family="ui-monospace, SFMono-Regular, Menlo, monospace" for array elements, values, and indices.

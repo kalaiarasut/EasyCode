@@ -49,22 +49,28 @@ function sanitizeMermaidChart(rawChart: string): string {
 
   // 2. Ensure diagram header exists
   const firstLine = cleaned.split("\n")[0].trim().toLowerCase();
-  const validHeaders = ["flowchart", "graph", "sequencediagram", "classdiagram", "statediagram", "erdiagram", "gantt", "pie"];
+  const validHeaders = ["flowchart", "graph", "sequencediagram", "classdiagram", "statediagram", "erdiagram", "gantt", "pie", "mindmap", "timeline"];
   const hasValidHeader = validHeaders.some((h) => firstLine.startsWith(h));
 
   if (!hasValidHeader) {
     cleaned = `flowchart TD\n${cleaned}`;
   }
 
-  // 3. Process lines to quote unquoted node labels containing special chars
+  // 3. Process lines to quote unquoted node labels and clean nested quotes
   const lines = cleaned.split("\n");
   const processedLines: string[] = [];
 
   for (let line of lines) {
     let l = line.trimEnd();
 
-    // Skip comment lines or directive lines
-    if (l.trim().startsWith("%%") || l.trim().startsWith("subgraph") || l.trim().startsWith("end")) {
+    // Skip comment lines or structural directives
+    if (
+      l.trim().startsWith("%%") ||
+      l.trim().startsWith("subgraph") ||
+      l.trim().startsWith("end") ||
+      l.trim().startsWith("classDef") ||
+      l.trim().startsWith("style")
+    ) {
       processedLines.push(l);
       continue;
     }
@@ -72,41 +78,60 @@ function sanitizeMermaidChart(rawChart: string): string {
     // Strip unparsed LaTeX $...$ from node definitions
     l = l.replace(/\$([^$\n]+)\$/g, "$1");
 
-    // Replace unescaped escaped newlines
+    // Replace literal \n with space
     l = l.replace(/\\n/g, " ");
 
-    // Auto-quote box nodes: id[text with special chars] -> id["text with special chars"]
-    // Matches id[...], id([...]), id{...}
-    l = l.replace(/([a-zA-Z0-9_\-]+)\[([^"\]\r\n]+)\]/g, (match, nodeId, label) => {
-      const trimmedLabel = label.trim();
-      if (trimmedLabel.startsWith('"') && trimmedLabel.endsWith('"')) return match;
-      const cleanLabel = trimmedLabel.replace(/"/g, "'");
-      return `${nodeId}["${cleanLabel}"]`;
+    // Sanitize Diamond Nodes: id{...} or id{"..."}
+    l = l.replace(/([a-zA-Z0-9_\-]+)\{([\s\S]*?)\}/g, (match, nodeId, inner) => {
+      let content = inner.trim();
+      if (content.startsWith('"') && content.endsWith('"') && content.length >= 2) {
+        content = content.slice(1, -1);
+      }
+      content = content.replace(/"/g, "'");
+      content = content.replace(/\[/g, "(").replace(/\]/g, ")");
+      content = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return `${nodeId}{"${content}"}`;
     });
 
-    // Auto-quote diamond nodes: id{text with special chars} -> id{"text with special chars"}
-    l = l.replace(/([a-zA-Z0-9_\-]+)\{([^"\}\r\n]+)\}/g, (match, nodeId, label) => {
-      const trimmedLabel = label.trim();
-      if (trimmedLabel.startsWith('"') && trimmedLabel.endsWith('"')) return match;
-      const cleanLabel = trimmedLabel.replace(/"/g, "'");
-      return `${nodeId}{"${cleanLabel}"}`;
+    // Sanitize Stadium Nodes: id([...]) or id(["..."])
+    l = l.replace(/([a-zA-Z0-9_\-]+)\(\[([\s\S]*?)\]\)/g, (match, nodeId, inner) => {
+      let content = inner.trim();
+      if (content.startsWith('"') && content.endsWith('"') && content.length >= 2) {
+        content = content.slice(1, -1);
+      }
+      content = content.replace(/"/g, "'");
+      content = content.replace(/\[/g, "(").replace(/\]/g, ")");
+      content = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return `${nodeId}(["${content}"])`;
     });
 
-    // Auto-quote rounded nodes: id((text)) -> id(("text"))
-    l = l.replace(/([a-zA-Z0-9_\-]+)\(\(([^"\)\r\n]+)\)\)/g, (match, nodeId, label) => {
-      const trimmedLabel = label.trim();
-      if (trimmedLabel.startsWith('"') && trimmedLabel.endsWith('"')) return match;
-      const cleanLabel = trimmedLabel.replace(/"/g, "'");
-      return `${nodeId}(("${cleanLabel}"))`;
+    // Sanitize Circle Nodes: id((...)) or id(("..."))
+    l = l.replace(/([a-zA-Z0-9_\-]+)\(\(([\s\S]*?)\)\)/g, (match, nodeId, inner) => {
+      let content = inner.trim();
+      if (content.startsWith('"') && content.endsWith('"') && content.length >= 2) {
+        content = content.slice(1, -1);
+      }
+      content = content.replace(/"/g, "'");
+      content = content.replace(/\[/g, "(").replace(/\]/g, ")");
+      content = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return `${nodeId}(("${content}"))`;
     });
 
-    // Auto-quote stadium nodes: id([text]) -> id(["text"])
-    l = l.replace(/([a-zA-Z0-9_\-]+)\(\[([^"\]\r\n]+)\]\)/g, (match, nodeId, label) => {
-      const trimmedLabel = label.trim();
-      if (trimmedLabel.startsWith('"') && trimmedLabel.endsWith('"')) return match;
-      const cleanLabel = trimmedLabel.replace(/"/g, "'");
-      return `${nodeId}(["${cleanLabel}"])`;
+    // Sanitize Box Nodes: id[...] or id["..."]
+    l = l.replace(/([a-zA-Z0-9_\-]+)\[([\s\S]*?)\]/g, (match, nodeId, inner) => {
+      let content = inner.trim();
+      if (content.startsWith('"') && content.endsWith('"') && content.length >= 2) {
+        content = content.slice(1, -1);
+      }
+      content = content.replace(/"/g, "'");
+      content = content.replace(/\[/g, "(").replace(/\]/g, ")");
+      content = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return `${nodeId}["${content}"]`;
     });
+
+    // Sanitize Edge Labels: -- "Label" --> or -- Label --> or |"Label"| or |Label|
+    l = l.replace(/--\s*"([^"]*)"\s*-->/g, (m, lbl) => `-- "${lbl.replace(/"/g, "'")}" -->`);
+    l = l.replace(/\|\s*"([^"]*)"\s*\|/g, (m, lbl) => `|"${lbl.replace(/"/g, "'")}"|`);
 
     processedLines.push(l);
   }

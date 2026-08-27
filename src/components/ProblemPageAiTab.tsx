@@ -37,9 +37,10 @@ import {
   Film,
   Network,
   Mic,
+  Brain,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
-import axios from "axios";
 import { ApiResponse } from "@/types/ApiResponse";
 import Link from "next/link";
 import { ProviderLogo } from "@/components/common/ProviderLogos";
@@ -50,6 +51,9 @@ import { getAllModelsForProvider, getEnabledModelIds } from "@/utils/customModel
 import AudioRecordingVisualizer from "@/components/common/AudioRecordingVisualizer";
 import AiMediaCard from "@/components/common/AiMediaCard";
 import MermaidFlowchartViewer from "@/components/common/MermaidFlowchartViewer";
+import SvgDiagramViewer from "@/components/common/SvgDiagramViewer";
+import InlineMemoryModal, { MemoryInspectItem } from "@/components/common/InlineMemoryModal";
+import ThinkingProcessBlock from "@/components/common/ThinkingProcessBlock";
 
 interface ProblemPageAiTabProps {
   sourceCode: string;
@@ -182,7 +186,24 @@ export default function ProblemPageAiTab({
   onSwitchTab,
   onApplyCode,
 }: ProblemPageAiTabProps) {
-  const [selectedModel, setSelectedModel] = useState<string>("auto");
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    try {
+      return typeof window !== "undefined" ? localStorage.getItem("easycode_last_active_model") || "auto" : "auto";
+    } catch (e) {
+      return "auto";
+    }
+  });
+
+  // Floating Ask AI on Text Selection
+  const [selectionTooltip, setSelectionTooltip] = useState<{
+    visible: boolean;
+    text: string;
+    x: number;
+    y: number;
+  }>({ visible: false, text: "", x: 0, y: 0 });
+
+  // Inline Memory Inspection Modal (Directly in chat space without forwarding to Settings)
+  const [selectedMemoryToInspect, setSelectedMemoryToInspect] = useState<MemoryInspectItem | null>(null);
   const [showModelDropdown, setShowModelDropdown] = useState<boolean>(false);
   const [modelSearch, setModelSearch] = useState<string>("");
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
@@ -231,6 +252,8 @@ export default function ProblemPageAiTab({
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
   const [chats, setChats] = useState<ChatMessage[]>([]);
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editingChatText, setEditingChatText] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState<string>("");
   const [isRecordingAudio, setIsRecordingAudio] = useState<boolean>(false);
@@ -365,6 +388,64 @@ export default function ProblemPageAiTab({
         .catch(() => {});
     }
   }, [apiKeys]);
+
+  // Floating Ask AI on Text Selection (Strictly inside chat viewport, NEVER in Settings or Inputs)
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
+      const text = selection.toString().trim();
+      if (text.length < 3) {
+        setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
+      // 1. Ensure selection is strictly inside the active chat scroll viewport
+      const anchorNode = selection.anchorNode;
+      const focusNode = selection.focusNode;
+      const container = scrollRef.current;
+      if (!container || !anchorNode || !focusNode || !container.contains(anchorNode) || !container.contains(focusNode)) {
+        setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
+      // 2. Ignore if selection is inside an input, textarea, or button
+      const parentEl = anchorNode.parentElement;
+      if (parentEl?.closest("textarea, input, button, [data-no-ask-ai='true']")) {
+        setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
+      try {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+
+        setSelectionTooltip({
+          visible: true,
+          text,
+          x: Math.max(80, Math.min(window.innerWidth - 80, rect.left + rect.width / 2)),
+          y: Math.max(10, rect.top - 46),
+        });
+      } catch (e) {}
+    };
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+  }, []);
+
+  const handleQuoteSelection = (quotedText: string) => {
+    const quote = `> "${quotedText}"\n\n`;
+    setInputValue((prev) => (prev ? `${prev}\n\n${quote}` : quote));
+    setSelectionTooltip({ visible: false, text: "", x: 0, y: 0 });
+    window.getSelection()?.removeAllRanges();
+    textareaRef.current?.focus();
+    toast.success("Referenced selection in chat");
+  };
 
   // Helper: Is a model available based strictly on valid saved key, verified status, and rate limit?
   const isModelValidAndAvailable = (model: ModelItem): boolean => {
@@ -575,12 +656,27 @@ export default function ProblemPageAiTab({
     }
   };
 
-  const handleSendMessage = async (userPrompt?: string) => {
-    const text = userPrompt || inputValue;
+  const handleSaveEditedChat = (chatId: string) => {
+    if (!editingChatText.trim() || isSubmitting) return;
+    const chatIdx = chats.findIndex((c) => c.id === chatId);
+    if (chatIdx === -1) return;
+
+    // Reset / fork conversation history to this point (truncate all chats from chatIdx onwards)
+    const trimmedChats = chats.slice(0, chatIdx);
+    const newText = editingChatText;
+    setEditingChatId(null);
+    setEditingChatText("");
+
+    handleSendMessage(newText, trimmedChats);
+  };
+
+  const handleSendMessage = async (userPrompt?: string, overrideChats?: ChatMessage[]) => {
+    const text = userPrompt !== undefined ? userPrompt : inputValue;
     if (!text.trim() || isSubmitting) return;
 
     abortControllerRef.current = new AbortController();
 
+    const baseChats = overrideChats !== undefined ? overrideChats : chats;
     const messageId = Date.now().toString();
     const attachedFilesPayload = uploadedDocs.map((d) => ({
       name: d.name,
@@ -594,21 +690,33 @@ export default function ProblemPageAiTab({
         attachedFilesPayload.map((f) => `--- File: ${f.name} ---\n${f.content}\n--- End File ---`).join("\n\n");
     }
 
+    let savedMemories: any[] = [];
+    try {
+      savedMemories = JSON.parse(localStorage.getItem("easycode_user_memories") || "[]");
+    } catch (e) {}
+
+    const conversationHistory = baseChats.flatMap((c) => [
+      { role: "user", content: c.input },
+      ...(c.output ? [{ role: "assistant", content: c.output }] : []),
+    ]);
+
     const data = {
       inputMessage: fullPrompt,
+      messages: conversationHistory,
       sourceCode: sourceCode || "",
       problemInfo: problemInfo || null,
       model: selectedModel,
       visualEngine: selectedVisualEngine,
       customKeys: apiKeys,
+      memories: savedMemories,
     };
 
     const currentAttached = uploadedDocs.map((d) => ({ name: d.name }));
     setInputValue("");
     setUploadedDocs([]);
 
-    setChats((prev) => [
-      ...prev,
+    setChats([
+      ...baseChats,
       {
         id: messageId,
         input: text,
@@ -870,6 +978,21 @@ export default function ProblemPageAiTab({
               );
             }
 
+            // Check for Enterprise SVG Vector Diagram
+            if (
+              part.lang?.toLowerCase() === "svg" ||
+              part.lang?.toLowerCase() === "xml" ||
+              part.code.trim().startsWith("<svg")
+            ) {
+              return (
+                <SvgDiagramViewer
+                  key={idx}
+                  svgCode={part.code}
+                  title="Vector Diagram"
+                />
+              );
+            }
+
             const isApplied = appliedCodeId === part.id;
             const isCopied = copiedId === part.id;
             return (
@@ -950,26 +1073,57 @@ export default function ProblemPageAiTab({
     return raw
       .replace(/\\mathcal\{O\}\(([^)]+)\)/g, "O($1)")
       .replace(/\\mathcal\{O\}/g, "O")
+      .replace(/\\mathcal\{([^}]+)\}/g, "$1")
+      .replace(/\\mathbb\{R\}/g, "R")
+      .replace(/\\mathbb\{Z\}/g, "Z")
+      .replace(/\\mathbb\{N\}/g, "N")
       .replace(/\\text\{([^}]+)\}/g, "$1")
       .replace(/\\mathrm\{([^}]+)\}/g, "$1")
       .replace(/\\mathbf\{([^}]+)\}/g, "$1")
-      .replace(/\\max/g, "max")
-      .replace(/\\min/g, "min")
-      .replace(/\\times/g, " * ")
-      .replace(/\\cdot/g, " * ")
-      .replace(/\\le/g, "<=")
-      .replace(/\\ge/g, ">=")
-      .replace(/\\ne/g, "!=")
-      .replace(/\\to/g, "->")
-      .replace(/\\in/g, " in ")
-      .replace(/\\alpha/g, "alpha")
-      .replace(/\\beta/g, "beta")
-      .replace(/\\gamma/g, "gamma")
-      .replace(/\\epsilon/g, "epsilon")
-      .replace(/\\Delta/g, "delta")
-      .replace(/\\approx/g, "≈")
-      .replace(/\\quad/g, " ")
-      .replace(/\\qquad/g, "  ")
+      // Floor & Ceiling notation
+      .replace(/\\lfloor\s*([\s\S]+?)\s*\\rfloor/g, "floor($1)")
+      .replace(/\\lceil\s*([\s\S]+?)\s*\\rceil/g, "ceil($1)")
+      .replace(/\\lfloor\b/g, "floor(")
+      .replace(/\\rfloor\b/g, ")")
+      .replace(/\\lceil\b/g, "ceil(")
+      .replace(/\\rceil\b/g, ")")
+      // Progressions & Dots
+      .replace(/\\to\b|\\rightarrow\b|\\longrightarrow\b/g, "→")
+      .replace(/\\leftarrow\b|\\longleftarrow\b/g, "←")
+      .replace(/\\leftrightarrow\b/g, "↔")
+      .replace(/\\dots\b|\\ldots\b|\\cdots\b/g, "...")
+      // Logarithms & Subscripts
+      .replace(/\\log_2\b/g, "log₂")
+      .replace(/\\log_\{2\}\b/g, "log₂")
+      .replace(/\\log_([0-9a-zA-Z])/g, "log_$1")
+      .replace(/\\log_\{([^}]+)\}/g, "log_($1)")
+      .replace(/\\log\b/g, "log")
+      .replace(/\\ln\b/g, "ln")
+      // Comparisons & Arithmetic
+      .replace(/\\max\b/g, "max")
+      .replace(/\\min\b/g, "min")
+      .replace(/\\times\b/g, " * ")
+      .replace(/\\cdot\b/g, " * ")
+      .replace(/\\div\b/g, " / ")
+      .replace(/\\le\b|\\leq\b/g, "<=")
+      .replace(/\\ge\b|\\geq\b/g, ">=")
+      .replace(/\\ne\b|\\neq\b/g, "!=")
+      .replace(/\\in\b/g, "∈")
+      .replace(/\\notin\b/g, "∉")
+      .replace(/\\infty\b/g, "∞")
+      .replace(/\\alpha\b/g, "alpha")
+      .replace(/\\beta\b/g, "beta")
+      .replace(/\\gamma\b/g, "gamma")
+      .replace(/\\epsilon\b/g, "epsilon")
+      .replace(/\\Delta\b/g, "delta")
+      .replace(/\\approx\b/g, "≈")
+      .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, "($1 / $2)")
+      .replace(/\\sqrt\{([^}]+)\}/g, "sqrt($1)")
+      .replace(/\\left[\[\(\{]/g, "(")
+      .replace(/\\right[\]\)\}]/g, ")")
+      .replace(/\\left|\\right/g, "")
+      .replace(/\\quad\b|\\qquad\b/g, " ")
+      .replace(/\\,|\\;|\\!/g, " ")
       .replace(/\\_/g, "_");
   };
 
@@ -984,8 +1138,15 @@ export default function ProblemPageAiTab({
 
   const formatInlineSpans = (text: string) => {
     let cleaned = cleanAiLatexMath(text);
-    // Replace inline $...$ with code formatted math
-    cleaned = cleaned.replace(/\$([^$\n]+)\$/g, (_, m) => cleanAiMathFormula(m));
+    // Replace display and inline $...$ or $$...$$ with code formatted math
+    cleaned = cleaned
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => cleanAiMathFormula(m))
+      .replace(/\$([^$\n]+)\$/g, (_, m) => cleanAiMathFormula(m))
+      .replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => cleanAiMathFormula(m))
+      .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => cleanAiMathFormula(m));
+
+    // Also clean any leftover raw LaTeX tokens
+    cleaned = cleanAiLatexMath(cleaned);
 
     const parts = cleaned.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g);
 
@@ -1074,6 +1235,94 @@ export default function ProblemPageAiTab({
         continue;
       }
 
+      // Check for <think>...</think> Reasoning / Chain of Thought Block
+      if (trimmed.startsWith("<think>") || (trimmed.includes("<think>") && !trimmed.startsWith("```"))) {
+        const thinkLines: string[] = [];
+        const firstLine = trimmed.replace(/^.*?<think>/i, "").trim();
+        if (firstLine) thinkLines.push(firstLine);
+        i++;
+        let isClosed = false;
+        while (i < rawLines.length && !rawLines[i].includes("</think>")) {
+          thinkLines.push(rawLines[i]);
+          i++;
+        }
+        if (i < rawLines.length && rawLines[i].includes("</think>")) {
+          isClosed = true;
+          const lastLine = rawLines[i].replace(/<\/think>[\s\S]*$/i, "").trim();
+          if (lastLine) thinkLines.push(lastLine);
+          i++;
+        }
+        const thinkText = thinkLines.join("\n").trim();
+        if (thinkText) {
+          elements.push(
+            <ThinkingProcessBlock
+              key={`think-${i}`}
+              thinkingContent={thinkText}
+              isStreaming={isSubmitting && !isClosed}
+            />
+          );
+        }
+        continue;
+      }
+
+      // Check for Memory Saved block (:::memory-saved{...}:::)
+      if (trimmed.includes(":::memory-saved")) {
+        const memMatch = trimmed.match(/:::memory-saved(\{.*?\})(?::::)?/);
+        if (memMatch) {
+          try {
+            const memoryData: MemoryInspectItem = JSON.parse(memMatch[1]);
+            // Automatically save to localStorage
+            try {
+              const existing = JSON.parse(localStorage.getItem("easycode_user_memories") || "[]");
+              if (!existing.some((m: any) => m.content.toLowerCase() === memoryData.content.toLowerCase())) {
+                const updatedList = [
+                  {
+                    id: memoryData.id || Date.now().toString(),
+                    content: memoryData.content,
+                    category: memoryData.category || "Goal",
+                    createdAt: "Just now",
+                  },
+                  ...existing,
+                ];
+                localStorage.setItem("easycode_user_memories", JSON.stringify(updatedList));
+                window.dispatchEvent(new Event("easycode_memory_updated"));
+              }
+            } catch (e) {}
+
+            elements.push(
+              <div
+                key={`mem-${i}`}
+                onClick={() => setSelectedMemoryToInspect(memoryData)}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 hover:border-amber-500/50 text-amber-950 dark:text-amber-100 text-xs font-medium transition-all cursor-pointer select-none my-2 shadow-2xs group w-fit max-w-full"
+                title="Click to view or edit this memory in place"
+              >
+                <div className="w-5 h-5 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 group-hover:scale-110 transition-transform">
+                  <Brain className="w-3 h-3" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wide">
+                      Memory Saved
+                    </span>
+                    <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 font-mono">
+                      {memoryData.category || "Goal"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-800 dark:text-neutral-200 truncate mt-0.5 font-normal">
+                    {memoryData.content}
+                  </p>
+                </div>
+                <span className="text-[10px] text-amber-700 dark:text-amber-400 underline font-medium opacity-80 group-hover:opacity-100 shrink-0 ml-1">
+                  View &rarr;
+                </span>
+              </div>
+            );
+            i++;
+            continue;
+          } catch (e) {}
+        }
+      }
+
       // Check for Video Media block (@[video](...))
       const videoMatch = trimmed.match(/@\[video\]\(([^)]+)\)/);
       if (videoMatch) {
@@ -1158,6 +1407,34 @@ export default function ProblemPageAiTab({
           >
             {cleanAiLatexMath(formula)}
           </div>
+        );
+        i++;
+        continue;
+      }
+
+      // H1 Header (# ...)
+      if (trimmed.startsWith("# ")) {
+        elements.push(
+          <h1
+            key={`h1-${i}`}
+            className="text-lg sm:text-xl font-bold text-neutral-950 dark:text-white pt-3 pb-1 tracking-tight font-sans border-b border-black/[0.06] dark:border-white/[0.08]"
+          >
+            {formatInlineSpans(trimmed.replace(/^#\s+/, ""))}
+          </h1>
+        );
+        i++;
+        continue;
+      }
+
+      // H2 Header (## ...)
+      if (trimmed.startsWith("## ")) {
+        elements.push(
+          <h2
+            key={`h2-${i}`}
+            className="text-base sm:text-lg font-bold text-neutral-900 dark:text-neutral-50 pt-2.5 pb-1 tracking-tight font-sans"
+          >
+            {formatInlineSpans(trimmed.replace(/^##\s+/, ""))}
+          </h2>
         );
         i++;
         continue;
@@ -1320,6 +1597,9 @@ export default function ProblemPageAiTab({
                   <button
                     onClick={() => {
                       setSelectedModel("auto");
+                      try {
+                        localStorage.setItem("easycode_last_active_model", "auto");
+                      } catch (e) {}
                       setShowModelDropdown(false);
                       toast.success("Enabled Auto Smart Model Routing");
                     }}
@@ -1352,6 +1632,9 @@ export default function ProblemPageAiTab({
                         key={m.id}
                         onClick={() => {
                           setSelectedModel(m.id);
+                          try {
+                            localStorage.setItem("easycode_last_active_model", m.id);
+                          } catch (e) {}
                           setShowModelDropdown(false);
                           toast.success(`Switched model to ${cleanModelName(m.name)}`);
                         }}
@@ -1548,22 +1831,111 @@ export default function ProblemPageAiTab({
           <div key={chat.id} className="space-y-4">
             {/* User Message (ChatGPT/Claude Style Pill on Right) */}
             <div className="flex justify-end">
-              <div className="max-w-[85%] rounded-3xl bg-[#F0EEE6] text-[#1C1B19] dark:bg-[#2A2826] dark:text-[#ECEAE4] px-4 py-2.5 text-sm leading-relaxed shadow-2xs space-y-1.5">
-                {chat.attachedDocs && chat.attachedDocs.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pb-1">
-                    {chat.attachedDocs.map((doc, idx) => (
-                      <span
-                        key={idx}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/10 dark:bg-white/10 text-[10px] font-mono"
-                      >
-                        <FileText className="w-3 h-3 opacity-70" />
-                        <span>{doc.name}</span>
-                      </span>
-                    ))}
+              {editingChatId === chat.id ? (
+                <div className="w-full min-w-[260px] sm:min-w-[360px] max-w-lg space-y-2 p-3 rounded-2xl bg-[#F0EEE6] dark:bg-[#2A2826] text-[#1C1B19] dark:text-[#ECEAE4] border border-black/10 dark:border-white/10 shadow-lg animate-in fade-in zoom-in-98 duration-150">
+                  <textarea
+                    ref={(el) => {
+                      if (el) {
+                        el.style.height = "auto";
+                        el.style.height = `${el.scrollHeight}px`;
+                      }
+                    }}
+                    value={editingChatText}
+                    onChange={(e) => {
+                      setEditingChatText(e.target.value);
+                      e.target.style.height = "auto";
+                      e.target.style.height = `${e.target.scrollHeight}px`;
+                    }}
+                    className="w-full bg-white/70 dark:bg-black/40 text-neutral-900 dark:text-neutral-100 p-2.5 rounded-xl border border-black/10 dark:border-white/15 outline-hidden text-xs sm:text-sm font-sans resize-none overflow-hidden focus:border-neutral-400 dark:focus:border-white/30 focus:outline-hidden focus:ring-0 transition-all leading-relaxed"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      const isChanged = editingChatText.trim() !== chat.input.trim();
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        if (isChanged && editingChatText.trim() && !isSubmitting) {
+                          handleSaveEditedChat(chat.id);
+                        }
+                      } else if (e.key === "Escape") {
+                        setEditingChatId(null);
+                      }
+                    }}
+                  />
+                  <div className="flex items-center justify-end gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingChatId(null)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-950 dark:hover:text-white bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={editingChatText.trim() === chat.input.trim() || !editingChatText.trim() || isSubmitting}
+                      onClick={() => {
+                        if (editingChatText.trim() !== chat.input.trim() && editingChatText.trim() && !isSubmitting) {
+                          handleSaveEditedChat(chat.id);
+                        }
+                      }}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all shadow-xs ${
+                        editingChatText.trim() !== chat.input.trim() && editingChatText.trim() && !isSubmitting
+                          ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 active:scale-95 cursor-pointer"
+                          : "bg-black/10 text-neutral-400 dark:bg-white/10 dark:text-neutral-500 cursor-not-allowed"
+                      }`}
+                      title={
+                        editingChatText.trim() === chat.input.trim()
+                          ? "Make a change to resend and reset the conversation"
+                          : "Resend prompt and regenerate conversation from this point"
+                      }
+                    >
+                      Resend
+                    </button>
                   </div>
-                )}
-                <p className="whitespace-pre-line font-sans">{chat.input}</p>
-              </div>
+                </div>
+              ) : (
+                <div className="group/user relative max-w-[85%] rounded-3xl bg-[#F0EEE6] text-[#1C1B19] dark:bg-[#2A2826] dark:text-[#ECEAE4] px-4 py-2.5 text-sm leading-relaxed shadow-2xs space-y-1.5">
+                  {chat.attachedDocs && chat.attachedDocs.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pb-1">
+                      {chat.attachedDocs.map((doc, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/10 dark:bg-white/10 text-[10px] font-mono"
+                        >
+                          <FileText className="w-3 h-3 opacity-70" />
+                          <span>{doc.name}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <p className="whitespace-pre-line font-sans">{chat.input}</p>
+
+                  {/* Floating Hover Action Bar: Edit & Reset, Copy */}
+                  <div className="absolute -bottom-6 right-2 opacity-0 group-hover/user:opacity-100 transition-opacity flex items-center gap-1.5 py-0.5 px-2 rounded-lg bg-neutral-900/90 dark:bg-[#2A2826]/95 backdrop-blur-xs border border-black/10 dark:border-white/10 shadow-lg text-[10px] text-white z-20">
+                    <button
+                      onClick={() => {
+                        setEditingChatId(chat.id);
+                        setEditingChatText(chat.input);
+                      }}
+                      className="flex items-center gap-1 hover:text-amber-300 transition-colors cursor-pointer py-0.5 px-1 rounded"
+                      title="Edit prompt and reset conversation to this point"
+                    >
+                      <Pencil className="w-2.5 h-2.5 text-amber-400" />
+                      <span>Edit</span>
+                    </button>
+                    <span className="opacity-30">|</span>
+                    <button
+                      onClick={() => handleCopyText(chat.input, `user-${chat.id}`)}
+                      className="flex items-center gap-1 hover:text-amber-300 transition-colors cursor-pointer py-0.5 px-1 rounded"
+                      title="Copy prompt"
+                    >
+                      {copiedId === `user-${chat.id}` ? (
+                        <Check className="w-2.5 h-2.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-2.5 h-2.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* AI Assistant Free-Flowing Response (No outer box / card container!) */}
@@ -1590,18 +1962,16 @@ export default function ProblemPageAiTab({
                   </div>
                 </div>
               ) : (
-                /* Claude-Style Spinner Verbs & Cycling Dots Animation (from Claudionary) */
-                <div className="flex items-center justify-between py-2 text-neutral-500 dark:text-neutral-400 animate-in fade-in duration-200">
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center text-xs font-mono font-medium select-none">
-                      <span className="shimmer">{currentVerb}</span>
-                      <span className="text-neutral-500 font-bold tracking-widest ml-0.5 inline-block min-w-[20px] text-left">{DOT_SEQUENCE[dotIndex]}</span>
-                    </div>
-                  </div>
+                /* Shimmering "Thinking..." block matching Antigravity / Workspace */
+                <div className="flex items-center justify-between py-1 text-neutral-500 dark:text-neutral-400 animate-in fade-in duration-200">
+                  <ThinkingProcessBlock
+                    thinkingContent="Synthesizing algorithmic logic and analyzing edge cases..."
+                    isStreaming={true}
+                  />
 
                   <button
                     onClick={handleCancelGeneration}
-                    className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
+                    className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
                   >
                     <Square className="w-2.5 h-2.5 fill-current" />
                     <span>Cancel</span>
@@ -1864,6 +2234,56 @@ export default function ProblemPageAiTab({
           </div>
         </div>
       </div>
+
+      {/* Floating Ask AI / Quote Selection Tooltip */}
+      {selectionTooltip.visible && (
+        <div
+          style={{
+            position: "fixed",
+            left: `${selectionTooltip.x}px`,
+            top: `${selectionTooltip.y}px`,
+            transform: "translateX(-50%)",
+          }}
+          className="z-50 flex items-center gap-1 p-1 rounded-xl bg-[#1C1B19]/95 dark:bg-[#2A2826]/95 backdrop-blur-md text-white border border-white/10 shadow-xl select-none animate-in fade-in zoom-in-95 duration-150"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <button
+            onClick={() => handleQuoteSelection(selectionTooltip.text)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium hover:bg-white/15 transition-colors cursor-pointer text-white"
+            title="Quote in prompt and ask AI"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+            <span>Ask AI</span>
+          </button>
+          <span className="text-white/20">|</span>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(selectionTooltip.text);
+              toast.success("Selection copied to clipboard");
+              setSelectionTooltip({ visible: false, text: "", x: 0, y: 0 });
+            }}
+            className="p-1 rounded-lg hover:bg-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+            title="Copy selection"
+          >
+            <Copy className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Inline Memory Inspection & Editing Modal (In-space without forwarding to Settings) */}
+      {selectedMemoryToInspect && (
+        <InlineMemoryModal
+          memory={selectedMemoryToInspect}
+          onClose={() => setSelectedMemoryToInspect(null)}
+          onUpdate={(updated) => {
+            setSelectedMemoryToInspect(null);
+            toast.success("Memory entry updated");
+          }}
+          onDelete={() => {
+            setSelectedMemoryToInspect(null);
+          }}
+        />
+      )}
     </div>
   );
 }

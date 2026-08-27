@@ -138,6 +138,9 @@ export async function POST(req: NextRequest) {
       customInstructions = "",
       skills = [],
       rules = [],
+      memories = [],
+      messages = [],
+      chatHistory = [],
     } = body;
 
     if (!inputMessage || typeof inputMessage !== "string") {
@@ -194,36 +197,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. IMAGE GENERATION HANDLING
+    // 2. IMAGE GENERATION HANDLING (Only for actual raster pictures/artwork, NOT vector SVG or flowchart diagrams)
+    const isSvgOrFlowchartQuery =
+      lowerQuery.includes("svg") ||
+      lowerQuery.includes("flowchart") ||
+      lowerQuery.includes("mermaid") ||
+      lowerQuery.includes("vector") ||
+      lowerQuery.includes("decision tree") ||
+      lowerQuery.includes("state machine");
+
     const isImageQuery =
-      isImageMode ||
-      lowerQuery.startsWith("create image") ||
-      lowerQuery.startsWith("create a image") ||
-      lowerQuery.startsWith("create an image") ||
-      lowerQuery.startsWith("generate image") ||
-      lowerQuery.startsWith("generate a image") ||
-      lowerQuery.startsWith("generate an image") ||
-      lowerQuery.startsWith("draw an image") ||
-      lowerQuery.startsWith("draw a image") ||
-      lowerQuery.startsWith("draw a picture") ||
-      lowerQuery.startsWith("draw picture") ||
-      lowerQuery.startsWith("draw a diagram") ||
-      lowerQuery.startsWith("draw diagram") ||
-      lowerQuery.startsWith("draw ") ||
-      lowerQuery.startsWith("make an image") ||
-      lowerQuery.startsWith("make a image") ||
-      lowerQuery.startsWith("make image") ||
-      lowerQuery.startsWith("render an image") ||
-      lowerQuery.startsWith("render a image") ||
-      lowerQuery.startsWith("render image") ||
-      lowerQuery.startsWith("visualize an image") ||
-      lowerQuery.startsWith("visualize in image") ||
-      lowerQuery.startsWith("/image") ||
-      lowerQuery.includes("generate an image") ||
-      lowerQuery.includes("generate a image") ||
-      lowerQuery.includes("create an image of") ||
-      lowerQuery.includes("generate image of") ||
-      lowerQuery.includes("draw an image of");
+      !isSvgOrFlowchartQuery &&
+      (isImageMode ||
+        lowerQuery.startsWith("/image") ||
+        lowerQuery.startsWith("create image") ||
+        lowerQuery.startsWith("create a image") ||
+        lowerQuery.startsWith("create an image") ||
+        lowerQuery.startsWith("generate image") ||
+        lowerQuery.startsWith("generate a image") ||
+        lowerQuery.startsWith("generate an image") ||
+        lowerQuery.startsWith("draw an image") ||
+        lowerQuery.startsWith("draw a image") ||
+        lowerQuery.startsWith("draw a picture") ||
+        lowerQuery.startsWith("draw picture") ||
+        lowerQuery.startsWith("render an image") ||
+        lowerQuery.startsWith("render a image") ||
+        lowerQuery.startsWith("render image") ||
+        lowerQuery.includes("generate an image") ||
+        lowerQuery.includes("generate a image") ||
+        lowerQuery.includes("create an image of") ||
+        lowerQuery.includes("generate image of") ||
+        lowerQuery.includes("draw an image of"));
 
     if (isImageQuery) {
       let cleanPrompt = inputMessage
@@ -407,10 +411,33 @@ export async function POST(req: NextRequest) {
       ? `\nCurrent Code in Monaco Editor:\n\`\`\`\n${sourceCode}\n\`\`\`\n`
       : "";
 
+    const memoriesContext =
+      Array.isArray(memories) && memories.length > 0
+        ? `\n--- USER PERSISTENT MEMORIES & PREFERENCES ---\n${memories
+            .map((m: any, i: number) => `[Memory ${i + 1} (${m.category || "General"})]: ${m.content}`)
+            .join("\n")}\nAlways respect and tailor your solutions according to these persistent user memories.\n`
+        : "";
+
+    const historyList =
+      Array.isArray(messages) && messages.length > 0
+        ? messages
+        : Array.isArray(chatHistory) && chatHistory.length > 0
+        ? chatHistory
+        : [];
+
+    const dialogueHistoryContext =
+      historyList.length > 0
+        ? `\n--- PREVIOUS CONVERSATION TURNS (CONTEXT) ---\n${historyList
+            .filter((m: any) => m.content && typeof m.content === "string" && m.content.trim())
+            .slice(-10)
+            .map((m: any) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+            .join("\n\n")}\n--- END PREVIOUS CONVERSATION TURNS ---\n`
+        : "";
+
     const systemPrompt = `You are EasyCode AI, a world-class Principal AI Coding Assistant, Software Architect, and Technical Pair Programmer.
 You can answer ANY question intelligently: competitive programming, system design, algorithm analysis, general software engineering, debugging, code refactoring, mathematics, documentation, or everyday conceptual inquiries.
 
-${problemContext}${editorCodeContext}${fileContext}${webSearchContext}${skillsDirectives}${rulesDirectives}
+${problemContext}${editorCodeContext}${fileContext}${webSearchContext}${memoriesContext}${dialogueHistoryContext}${skillsDirectives}${rulesDirectives}
 ${customInstructions ? `\nUser Custom Instructions:\n${customInstructions}\n` : ""}
 
 User Prompt: "${inputMessage}"
@@ -437,18 +464,26 @@ CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
      * Set \`width="100%" height="auto" preserveAspectRatio="xMidYMid meet"\` on root \`<svg>\`.
      * Fill the width: The array or system nodes should be spaced symmetrically across the container.
    - STRICT VERTICAL TIERS & ZERO TEXT OVERLAP:
-      * For step-by-step traces (e.g. Binary Search, Two Pointers, Array Sorting), each step MUST occupy a 190px vertical band (baseY = 80 + stepIndex * 190):
-        - y = baseY + 20: Step title (<text y="...">Step 1: low = 0, high = 9 | mid = 4</text>)
-        - y = baseY + 45: Explanation / condition text (<text y="...">Condition: 16 < 23 -> Narrow search to right half</text>)
-        - y = baseY + 72: Array index labels [0], [1], [2]... (font-size="11", fill="#8C877D")
-        - y = baseY + 84: Array cell boxes (<rect y="..." height="42" ...>)
-        - y = baseY + 110: Array numbers inside boxes (font-size="14", text-anchor="middle")
-        - y = baseY + 138: Pointer badges LOW, MID, HIGH (pill rects at y="..." height="20" rx="4", text at y="...")
-      * CRITICAL PROHIBITION: NEVER place condition subtitles, index labels [0], and pointer badges at the same Y coordinate! Every tier MUST have at least 25px vertical separation.
-      * Pointer badges (e.g. Low, Mid, High) MUST be rendered as rounded pills (\`<rect rx="4" ...>\` with \`<text ...>\`) so letters NEVER collide with arrows or numbers.
+       * For step-by-step traces (e.g. Binary Search, Two Pointers, Array Sorting), each step MUST occupy a 210px vertical band (baseY = 90 + stepIndex * 210):
+         - Step Container Card: <rect x="30" y="\${baseY}" width="900" height="190" rx="12" ... />
+         - y = baseY + 28: Step title (<text y="...">Step 1: low = 0, high = 9 | mid = 4 (Value = 16)</text>)
+         - y = baseY + 54: Condition explanation (<text y="...">Condition: 16 < 23 -> Narrow search to right half</text>)
+         - y = baseY + 86: Array index labels [0], [1], [2]... (font-size="11", fill="#8C877D")
+         - y = baseY + 98: Array cell boxes (<rect y="..." height="40" ...>)
+         - y = baseY + 124: Array numbers inside boxes (font-size="14", text-anchor="middle")
+         - y = baseY + 154: Pointer badges LOW, MID, HIGH (pill rects at y="..." height="22" rx="4", text at y="...")
+       * CRITICAL PROHIBITION: NEVER place condition subtitles, index labels [0], and pointer badges at the same Y coordinate! Every tier MUST have distinct vertical separation.
+       * Pointer badges (e.g. Low, Mid, High) MUST be rendered as rounded pills (<rect rx="4" ...> with <text ...>) so letters NEVER collide with arrows or numbers.
       * Typography: \`font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"\` for headers and labels; \`font-family="ui-monospace, SFMono-Regular, Menlo, monospace"\` for array values and code variables.
       * Include clean \`<defs>\` with \`<marker id="arrow" ...>\` and \`<filter id="card-shadow" ...>\`.
-7. STRICT ZERO-EMOJI POLICY: Never use emojis (such as 🚀, 🏗️, 📊, ⚡, 🧪, 📑, ✨, etc.) anywhere in your responses, greetings, lists, or headers. Use clean, elegant markdown typography and professional software engineering terminology only.`;
+7. STRICT ZERO-EMOJI POLICY: Never use emojis (such as 🚀, 🏗️, 📊, ⚡, 🧪, 📑, ✨, etc.) anywhere in your responses, greetings, lists, or headers. Use clean, elegant markdown typography and professional software engineering terminology only.
+8. MEMORY REFINEMENT & PERSISTENCE RULE:
+   - When the user asks you to remember, save, memorize, or record a preference, constraint, background, or goal (e.g. "remember that I prefer Python 3", "remember: explain recurrence relations first", "save memory: preparing for Meta E5", "remember my preference for O(1) space", "add memory ..."):
+   - CRITICAL REQUIREMENT: Do NOT plainly or crudely copy poor, informal, or slang wording. You MUST refine, distill, and improve the user's statement into a polished, high-signal, professional memory statement written in concise instructional voice (e.g. 'Prefers concise Python 3 solutions with strict type annotations' or 'Targeting Meta E5 software engineering interviews with focus on optimal Big-O trade-offs').
+   - Categorize into one of four categories: "Goal" | "Language" | "Topic" | "Style".
+   - Emit an explicit structured memory tag in your response:
+     :::memory-saved{"id": "${Date.now()}", "content": "<Refined high-quality memory>", "category": "Goal"|"Language"|"Topic"|"Style"}:::
+   - Follow it with a concise confirmation explaining what has been committed to memory and how it will tailor all future sessions.`;
 
     // STREAMING SSE RESPONSE (When stream === true)
     if (stream) {
@@ -526,11 +561,11 @@ CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
                   if (isRateLimit) {
                     if (!customKeys.gemini) {
                       throw new Error(
-                        "⚠️ EasyCode's shared Gemini free access is experiencing high traffic / rate limits. You can paste your own free Gemini API key in Settings -> API Keys for uninterrupted dedicated access, or retry in a few seconds."
+                        "EasyCode's shared Gemini free access is experiencing high traffic / rate limits. You can paste your own free Gemini API key in Settings -> API Keys for uninterrupted dedicated access, or retry in a few seconds."
                       );
                     } else {
                       throw new Error(
-                        "⚠️ Your custom Gemini API key hit a rate limit or quota constraint from Google AI Studio. Please check your quota in Google AI Studio or try again shortly."
+                        "Your custom Gemini API key hit a rate limit or quota constraint from Google AI Studio. Please check your quota in Google AI Studio or try again shortly."
                       );
                     }
                   }
@@ -568,7 +603,7 @@ CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
                 },
                 body: JSON.stringify({
                   model: claudeModelName,
-                  max_tokens: 2500,
+                  max_tokens: 8192,
                   stream: true,
                   messages: [{ role: "user", content: systemPrompt }],
                 }),
@@ -743,7 +778,7 @@ CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
           } catch (err: any) {
             const errorMsg =
               err?.message || "An unexpected error occurred while communicating with the AI service.";
-            const formattedError = `❌ **Error (${resolvedName})**:\n\`\`\`\n${errorMsg}\n\`\`\`\n*Please verify your API key and connection settings.*`;
+            const formattedError = `**Error (${resolvedName})**:\n\`\`\`\n${errorMsg}\n\`\`\`\n*Please verify your API key and connection settings in Settings.*`;
 
             sendEvent({ type: "chunk", text: formattedError });
             sendEvent({
@@ -844,7 +879,7 @@ CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
         },
         body: JSON.stringify({
           model: claudeModelName,
-          max_tokens: 2500,
+          max_tokens: 8192,
           messages: [{ role: "user", content: systemPrompt }],
         }),
       });
@@ -956,7 +991,7 @@ CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
   } catch (error: any) {
     console.error("Chat output error:", error);
     const errorMsg = error?.message || "An unexpected error occurred while communicating with the AI service.";
-    const formattedError = `❌ **Error**:\n\`\`\`\n${errorMsg}\n\`\`\`\n*Please verify your API key and connection settings in Settings (⚙️).*`;
+    const formattedError = `**Error**:\n\`\`\`\n${errorMsg}\n\`\`\`\n*Please verify your API key and connection settings in Settings.*`;
 
     return NextResponse.json(
       {
