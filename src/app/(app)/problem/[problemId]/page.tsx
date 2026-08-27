@@ -164,7 +164,7 @@ export default function ProblemPage() {
     let storedModel = "gemini-3.6-flash";
     try {
       storedPrompt = sessionStorage.getItem("easycode_live_generate_prompt") || "";
-      storedModel = sessionStorage.getItem("easycode_live_generate_model") || "gemini-3.6-flash";
+      storedModel = sessionStorage.getItem("easycode_live_generate_model") || localStorage.getItem("easycode_last_active_model") || "gemini-3.6-flash";
     } catch (e) {}
 
     const activePrompt = paramPrompt || storedPrompt;

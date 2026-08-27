@@ -14,10 +14,10 @@ const MODEL_NAME_MAP: Record<string, string> = {
   "gemini-2.5-pro": "Gemini 3.1 Pro",
   "groq/compound": "Groq Compound (MoE)",
   "groq/compound-mini": "Groq Compound Mini",
-  "qwen/qwen3.6-27b": "Qwen 3.6 27B (Groq)",
-  "openai/gpt-oss-120b": "GPT-OSS 120B (Groq)",
-  "openai/gpt-oss-20b": "GPT-OSS 20B (Groq)",
-  "allam-2-7b": "Allam 2 7B (Groq)",
+  "qwen/qwen3.6-27b": "Qwen 3.6 27B",
+  "openai/gpt-oss-120b": "GPT-OSS 120B",
+  "openai/gpt-oss-20b": "GPT-OSS 20B",
+  "allam-2-7b": "Allam 2 7B",
   "claude-3.7-sonnet": "Claude 3.7 Sonnet",
   "claude-3.5-sonnet": "Claude 3.5 Sonnet",
   "claude-3.5-haiku": "Claude 3.5 Haiku",
@@ -129,6 +129,7 @@ export async function POST(req: NextRequest) {
       inputMessage,
       problemInfo = null,
       model = "auto",
+      visualEngine = "",
       customKeys = {},
       stream = false,
       onlineSearch = false,
@@ -152,21 +153,36 @@ export async function POST(req: NextRequest) {
     const isVideoQuery =
       lowerQuery.startsWith("/video") ||
       lowerQuery.startsWith("create video") ||
+      lowerQuery.startsWith("create a video") ||
       lowerQuery.startsWith("generate video") ||
+      lowerQuery.startsWith("generate a video") ||
+      lowerQuery.startsWith("generate an video") ||
       lowerQuery.startsWith("make a video") ||
-      lowerQuery.startsWith("render video");
+      lowerQuery.startsWith("make video") ||
+      lowerQuery.startsWith("render video") ||
+      lowerQuery.startsWith("render a video") ||
+      lowerQuery.includes("generate a video") ||
+      lowerQuery.includes("create a video");
 
     if (isVideoQuery) {
       const cleanPrompt =
         inputMessage
           .replace(/^\/video\s*/i, "")
+          .replace(/^create a video\s*:?/i, "")
           .replace(/^create video\s*:?/i, "")
+          .replace(/^generate a video\s*:?/i, "")
+          .replace(/^generate an video\s*:?/i, "")
           .replace(/^generate video\s*:?/i, "")
           .replace(/^make a video\s*:?/i, "")
+          .replace(/^make video\s*:?/i, "")
+          .replace(/^render a video\s*:?/i, "")
           .replace(/^render video\s*:?/i, "")
           .trim() || inputMessage;
 
-      const videoMarkdown = formatVideoMarkdown(cleanPrompt, { customKeys });
+      const videoMarkdown = formatVideoMarkdown(cleanPrompt, {
+        customKeys,
+        model: visualEngine || "pollinations-motion-video",
+      });
       return NextResponse.json(
         {
           success: true,
@@ -182,21 +198,70 @@ export async function POST(req: NextRequest) {
     const isImageQuery =
       isImageMode ||
       lowerQuery.startsWith("create image") ||
+      lowerQuery.startsWith("create a image") ||
+      lowerQuery.startsWith("create an image") ||
       lowerQuery.startsWith("generate image") ||
+      lowerQuery.startsWith("generate a image") ||
+      lowerQuery.startsWith("generate an image") ||
       lowerQuery.startsWith("draw an image") ||
+      lowerQuery.startsWith("draw a image") ||
       lowerQuery.startsWith("draw a picture") ||
-      lowerQuery.startsWith("/image");
+      lowerQuery.startsWith("draw picture") ||
+      lowerQuery.startsWith("draw a diagram") ||
+      lowerQuery.startsWith("draw diagram") ||
+      lowerQuery.startsWith("draw ") ||
+      lowerQuery.startsWith("make an image") ||
+      lowerQuery.startsWith("make a image") ||
+      lowerQuery.startsWith("make image") ||
+      lowerQuery.startsWith("render an image") ||
+      lowerQuery.startsWith("render a image") ||
+      lowerQuery.startsWith("render image") ||
+      lowerQuery.startsWith("visualize an image") ||
+      lowerQuery.startsWith("visualize in image") ||
+      lowerQuery.startsWith("/image") ||
+      lowerQuery.includes("generate an image") ||
+      lowerQuery.includes("generate a image") ||
+      lowerQuery.includes("create an image of") ||
+      lowerQuery.includes("generate image of") ||
+      lowerQuery.includes("draw an image of");
 
     if (isImageQuery) {
-      const cleanPrompt =
-        inputMessage
-          .replace(/^\/image\s*/i, "")
-          .replace(/^create image\s*:?/i, "")
-          .replace(/^generate image\s*:?/i, "")
-          .replace(/^draw an image\s*:?/i, "")
-          .trim() || inputMessage;
+      let cleanPrompt = inputMessage
+        .replace(/^\/image\s*/i, "")
+        .replace(/^create an? image (?:of|for|explaining)?\s*:?/i, "")
+        .replace(/^generate an? image (?:of|for|explaining)?\s*:?/i, "")
+        .replace(/^draw an? (?:image|picture|diagram) (?:of|for|explaining)?\s*:?/i, "")
+        .replace(/^make an? image (?:of|for|explaining)?\s*:?/i, "")
+        .replace(/^render an? image (?:of|for|explaining)?\s*:?/i, "")
+        .replace(/generate an? image for this problem/gi, "")
+        .replace(/generate an? image/gi, "")
+        .replace(/create an? image/gi, "")
+        .replace(/for this problem/gi, "")
+        .trim();
 
-      const imageMarkdown = formatImageMarkdown(cleanPrompt, { customKeys });
+      if (!cleanPrompt) cleanPrompt = inputMessage;
+
+      // Enhance short algorithm / coding prompts with high-fidelity visual keywords
+      const lowerClean = cleanPrompt.toLowerCase();
+      let synthesisPrompt = cleanPrompt;
+      if (
+        lowerClean.includes("binary search") ||
+        lowerClean.includes("tree") ||
+        lowerClean.includes("graph") ||
+        lowerClean.includes("sort") ||
+        lowerClean.includes("dynamic programming") ||
+        lowerClean.includes("array") ||
+        lowerClean.includes("linked list") ||
+        lowerClean.includes("algorithm") ||
+        lowerClean.includes("structure")
+      ) {
+        synthesisPrompt = `${cleanPrompt}, computer science algorithm diagram, step-by-step visual infographic, pointers and data structure breakdown, clean technical vector illustration, high resolution, dark background`;
+      }
+
+      const imageMarkdown = formatImageMarkdown(synthesisPrompt, {
+        customKeys,
+        model: visualEngine || "pollinations-flux-schnell",
+      });
       return NextResponse.json(
         {
           success: true,
@@ -359,8 +424,31 @@ CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
    - The code must be immediately ready for direct insertion into the Monaco Editor and direct execution in Judge0.
 2. If the user asks for code or a solution, provide clean, idiomatic code in markdown fenced blocks with explicit language tags (e.g. \`\`\`python, \`\`\`typescript, \`\`\`cpp).
 3. If the user asks to debug or review code, point out exact edge cases, bounds issues, or bottlenecks with concrete fixes.
-4. Format mathematical expressions cleanly (e.g. O(N) time, O(1) space, array indices like prices[i], bounds like 0 <= i < n). Avoid raw unparsed LaTeX math markup.
-5. INTERACTIVE FLOWCHARTS & SYSTEM DIAGRAMS: When the user asks for a flowchart, logic diagram, state transition, sequence diagram, architecture overview, or algorithmic decision tree (or uses \`/flowchart\` / \`/diagram\` or \`@flowchart\`), ALWAYS generate a complete, valid Mermaid diagram wrapped in \`\`\`mermaid ... \`\`\` fenced code blocks. Use modern directional flowcharts (\`flowchart TD\` or \`flowchart LR\`) with concise labels, decision diamonds (\`{...}\`), and clear connection paths (\`-->|condition|\`).`;
+4. Format mathematical expressions cleanly (e.g. O(N) time, O(1) space, array indices like prices[i], bounds like 0 <= i < n). Avoid raw unparsed LaTeX math markup like $...$.
+5. INTERACTIVE FLOWCHARTS & SYSTEM DIAGRAMS: When the user asks for a flowchart, logic diagram, state transition, sequence diagram, architecture overview, or algorithmic decision tree (or uses \`/flowchart\` / \`/diagram\` or \`@flowchart\`), ALWAYS generate a complete, valid Mermaid diagram wrapped in \`\`\`mermaid ... \`\`\` fenced code blocks. Use modern directional flowcharts (\`flowchart TD\` or \`flowchart LR\`). CRITICAL: ALWAYS enclose every node label in double quotes (e.g. A["Initialize pointers"] --> B{"low <= high"} --> C["mid = low + (high - low) / 2"]). Never place unquoted parentheses or mathematical operations directly inside node brackets.
+6. ENTERPRISE SVG VECTOR DIAGRAMS: When the user asks for an SVG, vector diagram, visual execution trace, pointer trace, array memory layout, or uses \`@svg\` / \`@canvas-design\`, ALWAYS generate a publication-grade, ultra-clean standalone SVG enclosed in a single \`\`\`xml\\n<svg ...>\\n...\\n</svg>\\n\`\`\` fenced code block:
+   - THEME & PALETTE (Strictly match EasyCode Obsidian / Warm Cream design system):
+     * Canvas Background: \`#1C1B19\` (Obsidian Charcoal) with \`rx="16"\`. STRICTLY NEVER use generic navy blues like \`#0f172a\` or neon clashing colors unless explicitly asked.
+     * Card / Node Containers: \`#242321\` fill, \`#383532\` stroke with \`stroke-width="1.2"\` and \`rx="8"\`.
+     * Text: \`#EDEDEB\` for titles and primary data values; \`#8C877D\` for indices, variable names, and secondary labels.
+     * Highlights & Pointers: Warm Amber (\`#F59E0B\` / \`#D97706\`) for active elements, middle pointers, or targets; Emerald (\`#10B981\`) for match found; Indigo (\`#6366F1\`) for boundary pointers (Low/High).
+   - CONTAINER SIZING & RESPONSIVENESS:
+     * Set \`viewBox="0 0 960 H"\` (e.g. \`viewBox="0 0 960 520"\`, height based on content).
+     * Set \`width="100%" height="auto" preserveAspectRatio="xMidYMid meet"\` on root \`<svg>\`.
+     * Fill the width: The array or system nodes should be spaced symmetrically across the container.
+   - STRICT VERTICAL TIERS & ZERO TEXT OVERLAP:
+      * For step-by-step traces (e.g. Binary Search, Two Pointers, Array Sorting), each step MUST occupy a 190px vertical band (baseY = 80 + stepIndex * 190):
+        - y = baseY + 20: Step title (<text y="...">Step 1: low = 0, high = 9 | mid = 4</text>)
+        - y = baseY + 45: Explanation / condition text (<text y="...">Condition: 16 < 23 -> Narrow search to right half</text>)
+        - y = baseY + 72: Array index labels [0], [1], [2]... (font-size="11", fill="#8C877D")
+        - y = baseY + 84: Array cell boxes (<rect y="..." height="42" ...>)
+        - y = baseY + 110: Array numbers inside boxes (font-size="14", text-anchor="middle")
+        - y = baseY + 138: Pointer badges LOW, MID, HIGH (pill rects at y="..." height="20" rx="4", text at y="...")
+      * CRITICAL PROHIBITION: NEVER place condition subtitles, index labels [0], and pointer badges at the same Y coordinate! Every tier MUST have at least 25px vertical separation.
+      * Pointer badges (e.g. Low, Mid, High) MUST be rendered as rounded pills (\`<rect rx="4" ...>\` with \`<text ...>\`) so letters NEVER collide with arrows or numbers.
+      * Typography: \`font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"\` for headers and labels; \`font-family="ui-monospace, SFMono-Regular, Menlo, monospace"\` for array values and code variables.
+      * Include clean \`<defs>\` with \`<marker id="arrow" ...>\` and \`<filter id="card-shadow" ...>\`.
+7. STRICT ZERO-EMOJI POLICY: Never use emojis (such as 🚀, 🏗️, 📊, ⚡, 🧪, 📑, ✨, etc.) anywhere in your responses, greetings, lists, or headers. Use clean, elegant markdown typography and professional software engineering terminology only.`;
 
     // STREAMING SSE RESPONSE (When stream === true)
     if (stream) {
@@ -573,8 +661,15 @@ CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
                 }
                 endpoint = `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/v1/chat/completions`;
                 apiKey = cfToken;
-                openAiModel = targetModel.startsWith("@cf/") ? targetModel : "@cf/meta/llama-3.3-70b-instruct";
-              } else if (targetModel.startsWith("Qwen/") || targetModel.startsWith("meta-llama/") || targetModel.startsWith("deepseek-ai/")) {
+              } else if (
+                targetModel.startsWith("Qwen/") ||
+                targetModel.startsWith("meta-llama/") ||
+                targetModel.startsWith("deepseek-ai/") ||
+                targetModel.startsWith("mistralai/") ||
+                targetModel.startsWith("black-forest-labs/") ||
+                targetModel.startsWith("THUDM/") ||
+                (targetModel.includes("/") && !targetModel.startsWith("groq/") && !targetModel.startsWith("openai/") && !targetModel.startsWith("@cf/"))
+              ) {
                 endpoint = "https://router.huggingface.co/hf-inference/v1/chat/completions";
                 apiKey = customKeys.huggingface || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
                 openAiModel = targetModel;
@@ -793,6 +888,27 @@ CRITICAL LEETCODE / ONLINE JUDGE CODING GUIDELINES:
       } else if (targetModel.startsWith("kimi") || targetModel.startsWith("moonshot")) {
         endpoint = "https://api.moonshot.cn/v1/chat/completions";
         apiKey = customKeys.kimi || process.env.MOONSHOT_API_KEY || apiKey;
+      } else if (targetModel.startsWith("@cf/") || targetModel.includes("cloudflare")) {
+        const cfToken = customKeys.cloudflare || process.env.CLOUDFLARE_API_TOKEN;
+        const cfAccountId = customKeys.cloudflareAccountId || process.env.CLOUDFLARE_ACCOUNT_ID;
+        if (!cfToken || !cfAccountId) {
+          throw new Error("Cloudflare API Token & Account ID are required. Please configure both in Settings.");
+        }
+        endpoint = `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/v1/chat/completions`;
+        apiKey = cfToken;
+        openAiModel = targetModel.startsWith("@cf/") ? targetModel : "@cf/meta/llama-3.3-70b-instruct";
+      } else if (
+        targetModel.startsWith("Qwen/") ||
+        targetModel.startsWith("meta-llama/") ||
+        targetModel.startsWith("deepseek-ai/") ||
+        targetModel.startsWith("mistralai/") ||
+        targetModel.startsWith("black-forest-labs/") ||
+        targetModel.startsWith("THUDM/") ||
+        (targetModel.includes("/") && !targetModel.startsWith("groq/") && !targetModel.startsWith("openai/") && !targetModel.startsWith("@cf/"))
+      ) {
+        endpoint = "https://router.huggingface.co/hf-inference/v1/chat/completions";
+        apiKey = customKeys.huggingface || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+        openAiModel = targetModel;
       }
 
       if (!apiKey || apiKey.trim().length < 5) {

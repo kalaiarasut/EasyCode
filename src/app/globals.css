@@ -270,3 +270,42 @@
   background-color: #ef4444 !important;
   width: 4px !important;
 }
+
+/* Pure CSS Text Shimmer (shadcn shimmer utility) */
+@keyframes tw-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(100, 100, 100, 0.6) 0%,
+    rgba(20, 20, 20, 1) 50%,
+    rgba(100, 100, 100, 0.6) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  animation: tw-shimmer var(--shimmer-duration, 2s) linear infinite;
+  display: inline-block;
+}
+
+.dark .shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(255, 255, 255, 0.35) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  animation: tw-shimmer var(--shimmer-duration, 2s) linear infinite;
+}

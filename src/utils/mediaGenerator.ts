@@ -225,7 +225,7 @@ export function formatImageMarkdown(
   const aspect = options.aspectRatio || "1:1";
   const imageUrl = buildPollinationsImageUrl(prompt, options);
   const modelName = options.model ? options.model.toUpperCase() : "FLUX.1 Schnell";
-  return `### 🎨 Visual Synthesis: ${prompt.substring(0, 50)}${prompt.length > 50 ? "..." : ""}\n\n![${prompt}](${imageUrl}#aspect=${aspect}&model=${encodeURIComponent(modelName)})\n\n*Prompt:* **"${prompt}"**`;
+  return `![${prompt}](${imageUrl}#aspect=${aspect}&model=${encodeURIComponent(modelName)})`;
 }
 
 /**
@@ -238,5 +238,5 @@ export function formatVideoMarkdown(
   const aspect = options.aspectRatio || "16:9";
   const { videoUrl, posterUrl } = buildPollinationsVideoUrl(prompt, options);
   const modelName = options.model ? options.model.toUpperCase() : "Pollinations Motion AI";
-  return `### 🎬 Video Synthesis: ${prompt.substring(0, 50)}${prompt.length > 50 ? "..." : ""}\n\n@[video](${videoUrl}#poster=${encodeURIComponent(posterUrl)}&aspect=${aspect}&model=${encodeURIComponent(modelName)}&prompt=${encodeURIComponent(prompt)})\n\n*Video Prompt:* **"${prompt}"**`;
+  return `@[video](${videoUrl}#poster=${encodeURIComponent(posterUrl)}&aspect=${aspect}&model=${encodeURIComponent(modelName)}&prompt=${encodeURIComponent(prompt)})`;
 }

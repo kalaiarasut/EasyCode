@@ -57,16 +57,23 @@ import {
   Square,
   Film,
   Network,
+  Trash2,
+  ArrowDown,
 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
 import SettingsView from "./SettingsView";
 import GammaProblemCanvas from "../problem-builder/GammaProblemCanvas";
 import AiMediaCard from "@/components/common/AiMediaCard";
 import MermaidFlowchartViewer from "@/components/common/MermaidFlowchartViewer";
+import SvgDiagramViewer from "@/components/common/SvgDiagramViewer";
 import { GeneratedProblem } from "@/types/generatedProblem";
 import { ProviderLogo } from "@/components/common/ProviderLogos";
 import { BUILT_IN_SKILLS, DEFAULT_AI_RULES, AiSkill, AiRule } from "@/types/skillsAndRules";
 import { ALL_VISUAL_ENGINES, VisualEngineItem } from "@/utils/mediaGenerator";
+import { cleanModelName } from "@/utils/cleanModelName";
+import { getAllModelsForProvider, getEnabledModelIds } from "@/utils/customModelRegistry";
+import AudioRecordingVisualizer from "@/components/common/AudioRecordingVisualizer";
 import {
   exportAsHtmlPresentation,
   exportAsPrintableDocument,
@@ -132,14 +139,6 @@ interface UploadedDoc {
   isUploading?: boolean;
 }
 
-interface HistoryItem {
-  id: string;
-  title: string;
-  time: string;
-  topic?: string;
-  level?: string;
-}
-
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -158,11 +157,38 @@ interface Message {
   generatedProblem?: GeneratedProblem;
 }
 
+interface HistoryItem {
+  id: string;
+  title: string;
+  time: string;
+  timestamp?: number;
+  topic?: string;
+  level?: string;
+  messages?: Message[];
+}
+
+function formatRealTimestamp(timestamp?: number | string): string {
+  if (!timestamp) return "Just now";
+  const ms = typeof timestamp === "number" ? timestamp : new Date(timestamp).getTime();
+  if (isNaN(ms)) return typeof timestamp === "string" ? timestamp : "Just now";
+  const now = Date.now();
+  const diffSec = Math.floor((now - ms) / 1000);
+  if (diffSec < 60) return "Just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 interface ModelDefinition {
   id: string;
   name: string;
   provider: string;
-  category: "Frontier" | "Reasoning" | "Coding" | "Speed" | "Open Source" | "Search" | "Local" | "Universal";
+  category: "Frontier" | "Reasoning" | "Coding" | "Speed" | "Open Source" | "Search" | "Local" | "Universal" | "Image" | "Video";
   badge: string;
   contextWindow: string;
   requiredKey: string;
@@ -203,10 +229,10 @@ const ALL_MODELS: ModelDefinition[] = [
   // 6. Groq LPUs
   { id: "groq/compound", name: "Groq Compound (MoE)", provider: "Groq", category: "Speed", badge: "Ultra Fast", contextWindow: "128k tokens", requiredKey: "groq" },
   { id: "groq/compound-mini", name: "Groq Compound Mini", provider: "Groq", category: "Speed", badge: "Instant", contextWindow: "128k tokens", requiredKey: "groq" },
-  { id: "qwen/qwen3.6-27b", name: "Qwen 3.6 27B (Groq)", provider: "Groq", category: "Reasoning", badge: "Deep CoT", contextWindow: "32k tokens", requiredKey: "groq" },
-  { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B (Groq)", provider: "Groq", category: "Frontier", badge: "Flagship", contextWindow: "128k tokens", requiredKey: "groq" },
-  { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B (Groq)", provider: "Groq", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "groq" },
-  { id: "allam-2-7b", name: "Allam 2 7B (Groq)", provider: "Groq", category: "Speed", badge: "Multilingual", contextWindow: "32k tokens", requiredKey: "groq" },
+  { id: "qwen/qwen3.6-27b", name: "Qwen 3.6 27B", provider: "Groq", category: "Reasoning", badge: "Deep CoT", contextWindow: "32k tokens", requiredKey: "groq" },
+  { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B", provider: "Groq", category: "Frontier", badge: "Flagship", contextWindow: "128k tokens", requiredKey: "groq" },
+  { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B", provider: "Groq", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "groq" },
+  { id: "allam-2-7b", name: "Allam 2 7B", provider: "Groq", category: "Speed", badge: "Multilingual", contextWindow: "32k tokens", requiredKey: "groq" },
 
   // 7. Alibaba Cloud (Qwen)
   { id: "qwen-2.5-coder-32b", name: "Qwen 2.5 Coder 32B", provider: "Alibaba Cloud", category: "Coding", badge: "Open Champion", contextWindow: "128k tokens", requiredKey: "qwen" },
@@ -214,12 +240,12 @@ const ALL_MODELS: ModelDefinition[] = [
   { id: "qwen-2.5-72b-instruct", name: "Qwen 2.5 72B Instruct", provider: "Alibaba Cloud", category: "Frontier", badge: "72B Flagship", contextWindow: "128k tokens", requiredKey: "qwen" },
 
   // 8. Cerebras Systems
-  { id: "cerebras-llama-3.3-70b", name: "Llama 3.3 70B (Cerebras)", provider: "Cerebras", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "cerebras" },
-  { id: "cerebras-deepseek-r1-distill-70b", name: "DeepSeek R1 70B (Cerebras)", provider: "Cerebras", category: "Reasoning", badge: "Instant CoT", contextWindow: "128k tokens", requiredKey: "cerebras" },
+  { id: "cerebras-llama-3.3-70b", name: "Llama 3.3 70B", provider: "Cerebras", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "cerebras" },
+  { id: "cerebras-deepseek-r1-distill-70b", name: "DeepSeek R1 70B", provider: "Cerebras", category: "Reasoning", badge: "Instant CoT", contextWindow: "128k tokens", requiredKey: "cerebras" },
 
   // 9. SambaNova Systems
-  { id: "sambanova-deepseek-r1", name: "DeepSeek R1 (SambaNova)", provider: "SambaNova", category: "Speed", badge: "Fast", contextWindow: "64k tokens", requiredKey: "sambanova" },
-  { id: "sambanova-llama-3.3-70b", name: "Llama 3.3 70B (SambaNova)", provider: "SambaNova", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "sambanova" },
+  { id: "sambanova-deepseek-r1", name: "DeepSeek R1", provider: "SambaNova", category: "Speed", badge: "Fast", contextWindow: "64k tokens", requiredKey: "sambanova" },
+  { id: "sambanova-llama-3.3-70b", name: "Llama 3.3 70B", provider: "SambaNova", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "sambanova" },
 
   // 10. Zhipu AI (GLM)
   { id: "glm-4-plus", name: "GLM-4 Plus", provider: "Zhipu AI", category: "Reasoning", badge: "Flagship", contextWindow: "128k tokens", requiredKey: "zhipu" },
@@ -230,8 +256,8 @@ const ALL_MODELS: ModelDefinition[] = [
   { id: "yi-large", name: "Yi Large", provider: "01.AI", category: "Frontier", badge: "Large", contextWindow: "128k tokens", requiredKey: "yi" },
 
   // 12. SiliconFlow
-  { id: "siliconflow-deepseek-r1", name: "DeepSeek R1 (SiliconFlow)", provider: "SiliconFlow", category: "Speed", badge: "Full 671B", contextWindow: "64k tokens", requiredKey: "siliconflow" },
-  { id: "siliconflow-qwen-2.5-coder-32b", name: "Qwen 2.5 Coder (SiliconFlow)", provider: "SiliconFlow", category: "Speed", badge: "Fast", contextWindow: "32k tokens", requiredKey: "siliconflow" },
+  { id: "siliconflow-deepseek-r1", name: "DeepSeek R1", provider: "SiliconFlow", category: "Speed", badge: "Full 671B", contextWindow: "64k tokens", requiredKey: "siliconflow" },
+  { id: "siliconflow-qwen-2.5-coder-32b", name: "Qwen 2.5 Coder 32B", provider: "SiliconFlow", category: "Speed", badge: "Fast", contextWindow: "32k tokens", requiredKey: "siliconflow" },
 
   // 13. Mistral AI
   { id: "codestral-latest", name: "Codestral 22B", provider: "Mistral AI", category: "Coding", badge: "Code Specialist", contextWindow: "32k tokens", requiredKey: "mistral" },
@@ -242,9 +268,9 @@ const ALL_MODELS: ModelDefinition[] = [
   { id: "grok-2-mini", name: "Grok 2 mini", provider: "xAI", category: "Speed", badge: "Fast", contextWindow: "128k tokens", requiredKey: "grok" },
 
   // 15. Together AI & Fireworks
-  { id: "together-llama-3.3-70b", name: "Llama 3.3 70B (Together)", provider: "Together AI", category: "Open Source", badge: "Together Cloud", contextWindow: "128k tokens", requiredKey: "together" },
-  { id: "together-deepseek-r1", name: "DeepSeek R1 (Together)", provider: "Together AI", category: "Reasoning", badge: "Deep CoT", contextWindow: "64k tokens", requiredKey: "together" },
-  { id: "fireworks-deepseek-r1", name: "DeepSeek R1 (Fireworks)", provider: "Fireworks AI", category: "Speed", badge: "Fast CoT", contextWindow: "128k tokens", requiredKey: "fireworks" },
+  { id: "together-llama-3.3-70b", name: "Llama 3.3 70B", provider: "Together AI", category: "Open Source", badge: "Together Cloud", contextWindow: "128k tokens", requiredKey: "together" },
+  { id: "together-deepseek-r1", name: "DeepSeek R1", provider: "Together AI", category: "Reasoning", badge: "Deep CoT", contextWindow: "64k tokens", requiredKey: "together" },
+  { id: "fireworks-deepseek-r1", name: "DeepSeek R1", provider: "Fireworks AI", category: "Speed", badge: "Fast CoT", contextWindow: "128k tokens", requiredKey: "fireworks" },
 
   // 16. Research & Gateways
   { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro", provider: "Perplexity", category: "Search", badge: "Live Search", contextWindow: "128k tokens", requiredKey: "perplexity" },
@@ -276,8 +302,27 @@ export default function AiWorkspace() {
   const [mounted, setMounted] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
-  const [activeModel, setActiveModel] = useState("");
+  const [activeModel, setActiveModel] = useState<string>(() => {
+    try {
+      return typeof window !== "undefined" ? localStorage.getItem("easycode_last_active_model") || "" : "";
+    } catch (e) {
+      return "";
+    }
+  });
   const [serverHostedKeys, setServerHostedKeys] = useState<Record<string, boolean>>({});
+
+  // Auto-Scroll & Viewport Tracking (Prevents jumping when user scrolls up during live generation)
+  const isUserAtBottomRef = useRef(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+  // Floating Ask AI on Text Selection
+  const [selectionTooltip, setSelectionTooltip] = useState<{
+    visible: boolean;
+    text: string;
+    x: number;
+    y: number;
+  }>({ visible: false, text: "", x: 0, y: 0 });
   
   // Dropdown States
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -303,6 +348,7 @@ export default function AiWorkspace() {
   // Model & Media Search
   const [modelDropdownSearch, setModelDropdownSearch] = useState("");
   const [visualEngineSearch, setVisualEngineSearch] = useState("");
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -332,6 +378,8 @@ export default function AiWorkspace() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
   const [userHistory, setUserHistory] = useState<HistoryItem[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Claude Spinner Verbs State
@@ -627,21 +675,69 @@ export default function AiWorkspace() {
     return true;
   };
 
+  const [modelsVersion, setModelsVersion] = useState(0);
+
+  useEffect(() => {
+    const handleUpdate = () => setModelsVersion((v) => v + 1);
+    window.addEventListener("easycode_models_updated", handleUpdate);
+    return () => window.removeEventListener("easycode_models_updated", handleUpdate);
+  }, []);
+
   // List of ONLY available models (configured with verified keys and not rate limited)
   const availableModelsList = useMemo(() => {
-    return ALL_MODELS.filter((m) => isModelAvailable(m));
-  }, [apiKeys, serverHostedKeys, rateLimitedModels, verifiedModelsByProvider]);
+    // 1. Get models from other providers
+    const standardModels = ALL_MODELS.filter(
+      (m) => m.requiredKey !== "cloudflare" && m.requiredKey !== "huggingface"
+    ).filter((m) => isModelAvailable(m));
 
-  // Set active model to first available model if current one is not available
+    // 2. Get customized / enabled models for Cloudflare
+    const cfEnabledIds = getEnabledModelIds("cloudflare");
+    const cfModels = getAllModelsForProvider("cloudflare")
+      .filter((m) => cfEnabledIds.includes(m.id))
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        provider: "Cloudflare",
+        category: m.category,
+        badge: m.badge,
+        contextWindow: m.contextWindow,
+        requiredKey: "cloudflare",
+      }))
+      .filter((m) => isModelAvailable(m));
+
+    // 3. Get customized / enabled models for Hugging Face
+    const hfEnabledIds = getEnabledModelIds("huggingface");
+    const hfModels = getAllModelsForProvider("huggingface")
+      .filter((m) => hfEnabledIds.includes(m.id))
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        provider: "Hugging Face",
+        category: m.category,
+        badge: m.badge,
+        contextWindow: m.contextWindow,
+        requiredKey: "huggingface",
+      }))
+      .filter((m) => isModelAvailable(m));
+
+    return [...standardModels, ...cfModels, ...hfModels];
+  }, [apiKeys, serverHostedKeys, rateLimitedModels, verifiedModelsByProvider, modelsVersion]);
+
+  // Set active model: restore remembered model from localStorage if available, or first available model
   useEffect(() => {
     if (availableModelsList.length > 0) {
-      if (!activeModel || !availableModelsList.some((m) => m.id === activeModel)) {
+      const savedModel = typeof window !== "undefined" ? localStorage.getItem("easycode_last_active_model") : null;
+      if (savedModel && availableModelsList.some((m) => m.id === savedModel)) {
+        if (activeModel !== savedModel) {
+          setActiveModel(savedModel);
+        }
+      } else if (!activeModel || !availableModelsList.some((m) => m.id === activeModel)) {
         setActiveModel(availableModelsList[0].id);
       }
     } else {
       setActiveModel("");
     }
-  }, [availableModelsList, activeModel]);
+  }, [availableModelsList]);
 
   useEffect(() => {
     setMounted(true);
@@ -667,6 +763,44 @@ export default function AiWorkspace() {
           })
           .catch(() => {});
       }
+
+      // Fetch conversations from Supabase cloud database
+      const fetchSupabaseHistory = async () => {
+        try {
+          const userId = (session?.user as any)?._id || (session?.user as any)?.id;
+          let query = supabase.from("conversations").select("*").order("updated_at", { ascending: false }).limit(50);
+          if (userId) {
+            query = query.or(`user_id.eq.${userId},user_id.is.null`);
+          }
+          const { data, error } = await query;
+          if (!error && data && data.length > 0) {
+            const mapped: HistoryItem[] = data.map((row: any) => ({
+              id: row.id,
+              title: row.title,
+              time: row.updated_at ? formatRealTimestamp(row.updated_at) : "Recent",
+              timestamp: row.updated_at ? new Date(row.updated_at).getTime() : undefined,
+              topic: row.topic,
+              level: row.level,
+              messages: Array.isArray(row.messages) ? row.messages : [],
+            }));
+            setUserHistory((prev) => {
+              const map = new Map<string, HistoryItem>();
+              mapped.forEach((item) => map.set(item.id, item));
+              prev.forEach((item) => {
+                if (!map.has(item.id)) map.set(item.id, item);
+              });
+              const merged = Array.from(map.values()).slice(0, 50);
+              try {
+                localStorage.setItem("easycode_chat_history", JSON.stringify(merged));
+              } catch (e) {}
+              return merged;
+            });
+          }
+        } catch (e) {
+          console.warn("Could not load conversations from Supabase:", e);
+        }
+      };
+      fetchSupabaseHistory();
     } catch (e) {
       console.warn("Could not load local settings", e);
     }
@@ -698,35 +832,212 @@ export default function AiWorkspace() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
-
-  const saveHistoryItem = (title: string, level?: string, topic?: string) => {
-    const newItem: HistoryItem = {
-      id: Date.now().toString(),
-      title: title.length > 50 ? title.substring(0, 48) + "..." : title,
-      time: "Just now",
-      topic: topic || selectedTopic,
-      level: level || difficulty,
-    };
-    const updated = [newItem, ...userHistory.slice(0, 19)];
-    setUserHistory(updated);
-    try {
-      localStorage.setItem("easycode_chat_history", JSON.stringify(updated));
-    } catch (e) {}
+  // Handle container scroll to detect if user manually scrolled up
+  const handleContainerScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const isNearBottom = distanceFromBottom < 85;
+    isUserAtBottomRef.current = isNearBottom;
+    setShowScrollBottom(!isNearBottom && messages.length > 0);
   };
 
-  const clearHistory = () => {
+  const scrollToBottom = () => {
+    isUserAtBottomRef.current = true;
+    setShowScrollBottom(false);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // Only auto-scroll down if user is already at the bottom (prevents scroll jumping when user scrolls up during live generation)
+  useEffect(() => {
+    if (isUserAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isLoading]);
+
+  // Floating Ask AI on Text Selection
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
+      const text = selection.toString().trim();
+      if (text.length < 3) {
+        setSelectionTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
+      try {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+
+        setSelectionTooltip({
+          visible: true,
+          text,
+          x: Math.max(80, Math.min(window.innerWidth - 80, rect.left + rect.width / 2)),
+          y: Math.max(10, rect.top - 46),
+        });
+      } catch (e) {}
+    };
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+  }, []);
+
+  const handleQuoteSelection = (quotedText: string) => {
+    const quote = `> "${quotedText}"\n\n`;
+    setPrompt((prev) => (prev ? `${prev}\n\n${quote}` : quote));
+    setSelectionTooltip({ visible: false, text: "", x: 0, y: 0 });
+    window.getSelection()?.removeAllRanges();
+    textareaRef.current?.focus();
+    toast.success("Referenced selection in chat");
+  };
+
+  const saveOrUpdateSession = async (
+    allMessages: Message[],
+    sessionId: string,
+    promptTitle: string,
+    topic?: string,
+    level?: string
+  ) => {
+    const cleanTitle = promptTitle.length > 50 ? promptTitle.substring(0, 48) + "..." : promptTitle;
+    const finalTopic = topic || selectedTopic;
+
+    // Only assign difficulty level if a LeetCode problem was actually generated in this chat
+    const hasGeneratedProblem = allMessages.some(
+      (m) => m.generatedProblem || m.problemDetails
+    );
+    const finalLevel = hasGeneratedProblem ? (level || difficulty) : undefined;
+    const nowMs = Date.now();
+
+    setUserHistory((prev) => {
+      const existingIdx = prev.findIndex((item) => item.id === sessionId);
+      let updated: HistoryItem[];
+      if (existingIdx >= 0) {
+        updated = [...prev];
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          messages: allMessages,
+          time: "Just now",
+          timestamp: nowMs,
+          topic: finalTopic || updated[existingIdx].topic,
+          level: finalLevel ?? updated[existingIdx].level,
+        };
+      } else {
+        const newItem: HistoryItem = {
+          id: sessionId,
+          title: cleanTitle,
+          time: "Just now",
+          timestamp: nowMs,
+          topic: finalTopic,
+          level: finalLevel,
+          messages: allMessages,
+        };
+        updated = [newItem, ...prev.filter((h) => h.id !== sessionId).slice(0, 49)];
+      }
+      try {
+        localStorage.setItem("easycode_chat_history", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    // Persist conversation to Supabase cloud database
+    try {
+      const payload: any = {
+        id: sessionId,
+        title: cleanTitle,
+        topic: finalTopic || null,
+        level: finalLevel || null,
+        messages: allMessages,
+        updated_at: new Date().toISOString(),
+      };
+      if (currentUserId) {
+        payload.user_id = currentUserId;
+      }
+      await supabase.from("conversations").upsert(payload);
+    } catch (e) {
+      console.warn("Could not sync conversation to Supabase:", e);
+    }
+  };
+
+  const handleLoadHistorySession = (item: HistoryItem) => {
+    if (isLoading) {
+      toast.info("Please wait for current generation to finish or click stop.");
+      return;
+    }
+    setCurrentSessionId(item.id);
+    if (item.messages && item.messages.length > 0) {
+      setMessages(item.messages);
+    } else {
+      setMessages([
+        {
+          id: item.id + "_init",
+          role: "user",
+          content: item.title,
+        },
+      ]);
+    }
+    if (item.topic) setSelectedTopic(item.topic);
+    if (item.level) setDifficulty(item.level as any);
+    setActiveView("chat");
+  };
+
+  const handleDeleteConversation = async (id: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setUserHistory((prev) => {
+      const updated = prev.filter((item) => item.id !== id);
+      try {
+        localStorage.setItem("easycode_chat_history", JSON.stringify(updated));
+      } catch (err) {}
+      return updated;
+    });
+
+    if (currentSessionId === id) {
+      setCurrentSessionId(null);
+      setMessages([]);
+      setPrompt("");
+    }
+
+    toast.success("Conversation deleted");
+
+    try {
+      await supabase.from("conversations").delete().eq("id", id);
+    } catch (err) {
+      console.warn("Could not delete conversation from Supabase:", err);
+    }
+  };
+
+  const clearHistory = async () => {
     setUserHistory([]);
     try {
       localStorage.removeItem("easycode_chat_history");
     } catch (e) {}
+    if (currentSessionId) {
+      setCurrentSessionId(null);
+      setMessages([]);
+    }
     toast.success("History cleared");
+
+    try {
+      if (currentUserId) {
+        await supabase.from("conversations").delete().eq("user_id", currentUserId);
+      }
+    } catch (err) {
+      console.warn("Could not clear Supabase conversations:", err);
+    }
   };
 
   const handleSelectModel = (model: ModelDefinition) => {
     setActiveModel(model.id);
+    try {
+      localStorage.setItem("easycode_last_active_model", model.id);
+    } catch (e) {}
     setShowModelDropdown(false);
     setShowChatModelDropdown(false);
   };
@@ -826,6 +1137,127 @@ export default function AiWorkspace() {
 
   const currentModeData = MODE_PROMPT_SUGGESTIONS[activeMode] || MODE_PROMPT_SUGGESTIONS["Generate Problem"];
 
+  // Clean LaTeX / Math formulas into readable programming notation
+  const cleanAiMathFormula = (formula: string) => {
+    return formula
+      .replace(/\\mathcal\{O\}/g, "O")
+      .replace(/\\mathcal\{([^}]+)\}/g, "$1")
+      .replace(/\\mathbb\{R\}/g, "R")
+      .replace(/\\mathbb\{Z\}/g, "Z")
+      .replace(/\\text\{([^}]+)\}/g, "$1")
+      .replace(/\\le\b|\\leq\b/g, "<=")
+      .replace(/\\ge\b|\\geq\b/g, ">=")
+      .replace(/\\ne\b|\\neq\b/g, "!=")
+      .replace(/\\times\b/g, "*")
+      .replace(/\\cdot\b/g, "*")
+      .replace(/\\log\b/g, "log")
+      .replace(/\\min\b/g, "min")
+      .replace(/\\max\b/g, "max")
+      .replace(/\\sqrt\{([^}]+)\}/g, "sqrt($1)")
+      .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, "($1 / $2)")
+      .replace(/\\left|\\right/g, "")
+      .replace(/\\,/g, " ")
+      .replace(/\\;/g, " ")
+      .replace(/\\quad/g, " ")
+      .replace(/\{([^{}]+)\}/g, "$1")
+      .replace(/\^\{([^}]+)\}/g, "^$1")
+      .trim();
+  };
+
+  // Format inline spans: **bold**, *italic*, `code`, $math$, [links](url), and strip emojis
+  const formatInlineSpans = (text: string) => {
+    // 1. Strip emojis to strictly enforce zero-emoji design system
+    let cleaned = text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu, "").trim();
+
+    // 2. Replace inline LaTeX math $...$ with clean code badge
+    cleaned = cleaned.replace(/\$([^$\n]+)\$/g, (_, m) => `\`${cleanAiMathFormula(m)}\``);
+
+    // 3. Tokenize by inline code, bold, italic, links
+    const parts = cleaned.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g);
+
+    return parts.map((part, idx) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={idx} className="font-semibold text-neutral-900 dark:text-white">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (part.startsWith("*") && part.endsWith("*")) {
+        return <em key={idx} className="italic text-neutral-800 dark:text-neutral-200">{part.slice(1, -1)}</em>;
+      }
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return (
+          <code
+            key={idx}
+            className="px-1.5 py-0.5 mx-0.5 rounded bg-black/[0.05] dark:bg-white/[0.08] font-mono text-[12px] text-neutral-900 dark:text-neutral-100 border border-black/[0.04] dark:border-white/[0.06]"
+          >
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+      const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch) {
+        return (
+          <a
+            key={idx}
+            href={linkMatch[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-neutral-900 dark:text-white underline underline-offset-2 hover:opacity-80 transition-opacity font-medium"
+          >
+            {linkMatch[1]}
+          </a>
+        );
+      }
+      return <React.Fragment key={idx}>{part}</React.Fragment>;
+    });
+  };
+
+  // Render markdown table rows into a clean responsive table
+  const renderMarkdownTable = (lines: string[], keyIdx: number) => {
+    const headerLine = lines[0];
+    const bodyLines = lines.slice(2); // Skip header and separator
+
+    const parseRow = (row: string) =>
+      row
+        .split("|")
+        .map((c) => c.trim())
+        .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+
+    const headers = parseRow(headerLine);
+
+    return (
+      <div key={keyIdx} className="my-3 overflow-x-auto rounded-xl border border-black/[0.08] dark:border-white/[0.08] bg-black/[0.01] dark:bg-white/[0.01]">
+        <table className="w-full text-left text-xs font-mono">
+          <thead className="bg-black/[0.03] dark:bg-white/[0.03] border-b border-black/[0.08] dark:border-white/[0.08] font-sans font-semibold text-neutral-800 dark:text-neutral-200">
+            <tr>
+              {headers.map((h, i) => (
+                <th key={i} className="px-3 py-2 text-xs">
+                  {formatInlineSpans(h)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-black/[0.04] dark:divide-white/[0.04]">
+            {bodyLines.map((row, rIdx) => {
+              const cells = parseRow(row);
+              return (
+                <tr key={rIdx} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+                  {cells.map((cell, cIdx) => (
+                    <td key={cIdx} className="px-3 py-2 text-neutral-700 dark:text-neutral-300 font-sans text-xs">
+                      {formatInlineSpans(cell)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   const renderFormattedMessage = (content: string) => {
     const lines = content.split("\n");
     const elements: React.ReactNode[] = [];
@@ -855,6 +1287,88 @@ export default function AiWorkspace() {
           />
         );
         continue;
+      }
+
+      // Check for Code Fenced Block (```lang ... ```)
+      if (trimmed.startsWith("```")) {
+        const lang = trimmed.slice(3).trim() || "code";
+        const codeLines: string[] = [];
+        i++; // skip opening ```
+        while (i < lines.length && !lines[i].trim().startsWith("```")) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length && lines[i].trim().startsWith("```")) {
+          i++; // skip closing ```
+        }
+        const codeText = codeLines.join("\n");
+
+        // Check if this is an SVG Vector Diagram
+        const isSvgCode =
+          lang.toLowerCase() === "svg" ||
+          (lang.toLowerCase() === "xml" && codeText.includes("<svg") && codeText.includes("</svg>")) ||
+          (codeText.trim().startsWith("<svg") && codeText.includes("</svg>"));
+
+        if (isSvgCode) {
+          elements.push(
+            <SvgDiagramViewer
+              key={`svg-${i}`}
+              svgCode={codeText}
+              title="Vector Architecture Diagram"
+            />
+          );
+          continue;
+        }
+
+        elements.push(
+          <div
+            key={`code-${i}`}
+            className="my-3 rounded-xl overflow-hidden border border-[#DFDAD0] dark:border-[#383532] bg-[#141414] text-neutral-100 font-mono text-xs shadow-xs"
+          >
+            <div className="flex items-center justify-between px-3 py-1.5 bg-[#1C1B19] border-b border-white/[0.08] text-[11px] text-neutral-400">
+              <span className="font-mono text-neutral-300">{lang}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(codeText);
+                  toast.success("Code copied to clipboard");
+                }}
+                className="flex items-center gap-1 text-neutral-400 hover:text-white transition-colors cursor-pointer text-[11px]"
+              >
+                <Copy className="w-3 h-3" />
+                <span>Copy</span>
+              </button>
+            </div>
+            <pre className="p-3.5 overflow-x-auto leading-relaxed whitespace-pre font-mono text-xs text-neutral-200">
+              {codeText}
+            </pre>
+          </div>
+        );
+        continue;
+      }
+
+      // Check for Raw SVG Block (<svg ... </svg>)
+      if (trimmed.startsWith("<svg") || (trimmed.includes("<svg") && !trimmed.startsWith("```"))) {
+        const svgLines: string[] = [];
+        while (i < lines.length && !lines[i].includes("</svg>")) {
+          svgLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length && lines[i].includes("</svg>")) {
+          svgLines.push(lines[i]);
+          i++;
+        }
+        const rawSvgCode = svgLines.join("\n").trim();
+        if (rawSvgCode.includes("<svg") && rawSvgCode.includes("</svg>")) {
+          elements.push(
+            <SvgDiagramViewer
+              key={`svg-raw-${i}`}
+              svgCode={rawSvgCode}
+              title="Vector Architecture Diagram"
+            />
+          );
+          continue;
+        }
       }
 
       // Check for Video (@[video](...))
@@ -908,12 +1422,98 @@ export default function AiWorkspace() {
         continue;
       }
 
-      // Header H3
+      // Check for Markdown Table
+      if (
+        trimmed.startsWith("|") &&
+        trimmed.endsWith("|") &&
+        i + 1 < lines.length &&
+        lines[i + 1].trim().includes("---")
+      ) {
+        const tableLines: string[] = [];
+        while (i < lines.length && lines[i].trim().startsWith("|")) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        elements.push(renderMarkdownTable(tableLines, i));
+        continue;
+      }
+
+      // Horizontal Rule
+      if (trimmed === "---" || trimmed === "***" || trimmed === "___") {
+        elements.push(<hr key={`hr-${i}`} className="my-3 border-black/[0.08] dark:border-white/[0.08]" />);
+        i++;
+        continue;
+      }
+
+      // Headers (H2, H3, H4)
+      if (trimmed.startsWith("## ")) {
+        elements.push(
+          <h2 key={`h2-${i}`} className="text-base font-bold text-neutral-900 dark:text-white pt-3 pb-1 tracking-tight">
+            {formatInlineSpans(trimmed.replace(/^##\s+/, ""))}
+          </h2>
+        );
+        i++;
+        continue;
+      }
+
       if (trimmed.startsWith("### ")) {
         elements.push(
-          <h3 key={`h3-${i}`} className="text-sm font-bold text-neutral-900 dark:text-neutral-100 pt-2 pb-1">
-            {trimmed.replace(/^###\s+/, "")}
+          <h3 key={`h3-${i}`} className="text-sm font-bold text-neutral-900 dark:text-neutral-100 pt-2 pb-1 tracking-tight">
+            {formatInlineSpans(trimmed.replace(/^###\s+/, ""))}
           </h3>
+        );
+        i++;
+        continue;
+      }
+
+      if (trimmed.startsWith("#### ")) {
+        elements.push(
+          <h4 key={`h4-${i}`} className="text-xs font-bold text-neutral-900 dark:text-neutral-100 pt-1.5 pb-0.5 uppercase tracking-wider">
+            {formatInlineSpans(trimmed.replace(/^####\s+/, ""))}
+          </h4>
+        );
+        i++;
+        continue;
+      }
+
+      // Blockquotes
+      if (trimmed.startsWith("> ")) {
+        elements.push(
+          <blockquote key={`quote-${i}`} className="border-l-2 border-neutral-300 dark:border-neutral-700 pl-3 py-1 my-1.5 text-xs italic text-neutral-600 dark:text-neutral-400">
+            {formatInlineSpans(trimmed.replace(/^>\s*/, ""))}
+          </blockquote>
+        );
+        i++;
+        continue;
+      }
+
+      // Bullet items (* , - , • )
+      if (trimmed.startsWith("•") || trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+        const cleanText = trimmed.replace(/^[•\-\*]\s*/, "");
+        elements.push(
+          <div key={`bullet-${i}`} className="flex items-start gap-2.5 pl-1 my-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 dark:bg-neutral-500 mt-2 shrink-0" />
+            <span className="flex-1 text-sm leading-relaxed text-[#242220] dark:text-[#E2DFD8]">
+              {formatInlineSpans(cleanText)}
+            </span>
+          </div>
+        );
+        i++;
+        continue;
+      }
+
+      // Numbered items (1. , 2. )
+      const numMatch = trimmed.match(/^(\d+)\.\s*(.+)/);
+      if (numMatch) {
+        elements.push(
+          <div key={`num-${i}`} className="flex items-start gap-2 pl-1 my-1.5">
+            <span className="font-mono text-xs font-semibold text-neutral-500 shrink-0 mt-0.5">
+              {numMatch[1]}.
+            </span>
+            <span className="flex-1 text-sm leading-relaxed text-[#242220] dark:text-[#E2DFD8]">
+              {formatInlineSpans(numMatch[2])}
+            </span>
+          </div>
         );
         i++;
         continue;
@@ -922,8 +1522,8 @@ export default function AiWorkspace() {
       // Standard text line
       if (trimmed) {
         elements.push(
-          <p key={`line-${i}`} className="whitespace-pre-line leading-relaxed my-0.5">
-            {line}
+          <p key={`line-${i}`} className="leading-relaxed my-1 text-[#242220] dark:text-[#E2DFD8]">
+            {formatInlineSpans(line)}
           </p>
         );
       } else {
@@ -932,7 +1532,7 @@ export default function AiWorkspace() {
       i++;
     }
 
-    return <div className="space-y-1">{elements}</div>;
+    return <div className="space-y-0.5">{elements}</div>;
   };
 
   const handleCancelGeneration = () => {
@@ -947,19 +1547,76 @@ export default function AiWorkspace() {
     const textToSend = customPromptText || prompt;
     if ((!textToSend.trim() && uploadedDocs.length === 0) || isLoading) return;
 
-    const lowerText = textToSend.toLowerCase();
-    const isGenerateProblemRequest =
-      activeMode === "Generate Problem" ||
-      lowerText.startsWith("construct an interactive") ||
-      lowerText.startsWith("generate a problem") ||
-      lowerText.startsWith("generate problem") ||
-      lowerText.startsWith("create a problem") ||
-      lowerText.startsWith("create problem") ||
-      lowerText.startsWith("build a problem") ||
-      lowerText.includes("problem specification") ||
-      lowerText.includes("generate an algorithm problem") ||
-      lowerText.includes("generate a dsa problem") ||
-      lowerText.includes("construct a competitive programming problem");
+    isUserAtBottomRef.current = true;
+    setShowScrollBottom(false);
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 60);
+
+    const lowerText = textToSend.toLowerCase().trim();
+
+    // 1. Detect Image & Video Synthesis Requests
+    const isImageQuery =
+      isImageMode ||
+      lowerText.startsWith("/image") ||
+      lowerText.startsWith("create image") ||
+      lowerText.startsWith("create a image") ||
+      lowerText.startsWith("create an image") ||
+      lowerText.startsWith("generate image") ||
+      lowerText.startsWith("generate a image") ||
+      lowerText.startsWith("generate an image") ||
+      lowerText.startsWith("draw an image") ||
+      lowerText.startsWith("draw a image") ||
+      lowerText.startsWith("draw a picture") ||
+      lowerText.startsWith("draw picture") ||
+      lowerText.startsWith("draw a diagram") ||
+      lowerText.startsWith("draw diagram") ||
+      lowerText.startsWith("draw ") ||
+      lowerText.startsWith("make an image") ||
+      lowerText.startsWith("make a image") ||
+      lowerText.startsWith("make image") ||
+      lowerText.startsWith("render an image") ||
+      lowerText.startsWith("render a image") ||
+      lowerText.startsWith("render image") ||
+      lowerText.startsWith("visualize an image") ||
+      lowerText.startsWith("visualize in image") ||
+      lowerText.includes("generate an image") ||
+      lowerText.includes("generate a image") ||
+      lowerText.includes("create an image of") ||
+      lowerText.includes("generate image of") ||
+      lowerText.includes("draw an image of");
+
+    const isVideoQuery =
+      lowerText.startsWith("/video") ||
+      lowerText.startsWith("create video") ||
+      lowerText.startsWith("create a video") ||
+      lowerText.startsWith("generate video") ||
+      lowerText.startsWith("generate a video") ||
+      lowerText.startsWith("generate an video") ||
+      lowerText.startsWith("make a video") ||
+      lowerText.startsWith("make video") ||
+      lowerText.startsWith("render video") ||
+      lowerText.startsWith("render a video") ||
+      lowerText.includes("generate a video") ||
+      lowerText.includes("create a video");
+
+    // 2. Detect Explicit Problem Generation Requests (navigates to /problem/new with Gamma live engine)
+    const isExplicitProblemRequest =
+      !isImageQuery &&
+      !isVideoQuery &&
+      (lowerText.startsWith("construct an interactive") ||
+        lowerText.startsWith("generate a coding problem") ||
+        lowerText.startsWith("generate a dsa problem") ||
+        lowerText.startsWith("generate a leetcode problem") ||
+        lowerText.startsWith("generate an algorithm problem") ||
+        lowerText.startsWith("create a coding problem") ||
+        lowerText.startsWith("create a dsa problem") ||
+        lowerText.startsWith("create a leetcode problem") ||
+        lowerText.startsWith("build a coding problem") ||
+        lowerText.startsWith("create a hard ") ||
+        lowerText.startsWith("create a medium ") ||
+        lowerText.startsWith("create an easy ") ||
+        lowerText.includes("problem specification for leetcode") ||
+        lowerText.includes("generate a problem on") ||
+        lowerText.includes("create a problem on"));
 
     // Save prompt & generation params
     try {
@@ -969,12 +1626,15 @@ export default function AiWorkspace() {
       sessionStorage.setItem("easycode_live_generate_model", activeModel || "gemini-3.6-flash");
     } catch (e) {}
 
-    saveHistoryItem(textToSend, difficulty, selectedTopic);
-
-    // If asking for a problem generation, immediately navigate to Problem Page with live Gamma builder
-    if (isGenerateProblemRequest) {
+    // If asking explicitly for problem generation, navigate to Problem Page with live Gamma builder
+    if (isExplicitProblemRequest) {
       window.location.href = `/problem/new?generate=true&prompt=${encodeURIComponent(textToSend)}&difficulty=${encodeURIComponent(difficulty)}&topic=${encodeURIComponent(selectedTopic || "Algorithms")}&model=${encodeURIComponent(activeModel || "gemini-3.6-flash")}`;
       return;
+    }
+
+    const sessionId = currentSessionId || Date.now().toString();
+    if (!currentSessionId) {
+      setCurrentSessionId(sessionId);
     }
 
     const userMessage: Message = {
@@ -984,7 +1644,16 @@ export default function AiWorkspace() {
       uploadedFiles: uploadedDocs.length > 0 ? uploadedDocs.map((d) => d.name) : undefined,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    const assistantId = (Date.now() + 1).toString();
+    const initialAssistantMsg: Message = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      modelUsed: activeModel,
+    };
+
+    setMessages((prev) => [...prev, userMessage, initialAssistantMsg]);
+    setStreamingMessageId(assistantId);
     setPrompt("");
     const docsToSend = [...uploadedDocs];
     setUploadedDocs([]);
@@ -993,7 +1662,11 @@ export default function AiWorkspace() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    let accumulatedText = "";
+    let finalModelUsed = activeModel;
+
     try {
+      const willStream = !isImageQuery && !isVideoQuery;
       const res = await fetch("/api/code/chat-output", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1001,26 +1674,77 @@ export default function AiWorkspace() {
         body: JSON.stringify({
           inputMessage: textToSend,
           model: activeModel || "auto",
+          visualEngine: activeVisualEngine,
           customKeys: apiKeys,
           onlineSearch: isOnlineEnabled,
-          isImageMode: isImageMode,
+          isImageMode: isImageMode || isImageQuery,
           uploadedDocs: docsToSend,
           problemInfo: selectedTopic ? { title: selectedTopic, level: difficulty } : null,
           skills: skills,
           rules: rules,
+          stream: willStream,
         }),
       });
 
-      const data = await res.json();
-      if (data?.isRateLimited && data?.rateLimitedModel) {
-        setRateLimitedModels((prev) => new Set([...prev, data.rateLimitedModel]));
+      const contentType = res.headers.get("content-type") || "";
+
+      if (willStream && res.ok && res.body && !contentType.includes("application/json")) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const raw = line.slice(6).trim();
+              if (!raw || raw === "[DONE]") continue;
+              try {
+                const event = JSON.parse(raw);
+                if (event.type === "chunk") {
+                  const chunk = event.text || event.content || "";
+                  if (chunk) {
+                    accumulatedText += chunk;
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantId ? { ...m, content: accumulatedText } : m
+                      )
+                    );
+                  }
+                } else if (event.type === "thinking_stage") {
+                  if (event.verb) setCurrentVerb(event.verb);
+                } else if (event.type === "done") {
+                  if (event.output && !accumulatedText) {
+                    accumulatedText = event.output;
+                  }
+                  if (event.modelUsed) finalModelUsed = event.modelUsed;
+                } else if (event.type === "error") {
+                  throw new Error(event.error || "Generation error");
+                }
+              } catch (parseErr: any) {
+                // Ignore partial json parse error during chunk split
+              }
+            }
+          }
+        }
+      } else {
+        const data = await res.json();
+        if (data?.isRateLimited && data?.rateLimitedModel) {
+          setRateLimitedModels((prev) => new Set([...prev, data.rateLimitedModel]));
+        }
+        accumulatedText = data?.output || "I'm EasyCode AI. How can I help you code, analyze algorithms, or design software today?";
+        if (data?.modelUsed) finalModelUsed = data.modelUsed;
       }
-      const assistantText = data?.output || "I'm EasyCode AI. How can I help you code, analyze algorithms, or design software today?";
 
       // Helper: parse code block if single clean code block
       let codeSnippetData: { code: string; language: string } | undefined = undefined;
-      const codeBlockMatch = assistantText.match(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/);
-      if (codeBlockMatch && assistantText.trim().startsWith("```") && assistantText.trim().endsWith("```")) {
+      const codeBlockMatch = accumulatedText.match(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/);
+      if (codeBlockMatch && accumulatedText.trim().startsWith("```") && accumulatedText.trim().endsWith("```")) {
         codeSnippetData = {
           language: codeBlockMatch[1] || "python",
           code: codeBlockMatch[2],
@@ -1028,36 +1752,49 @@ export default function AiWorkspace() {
       }
 
       const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
+        id: assistantId,
         role: "assistant",
-        content: assistantText,
-        modelUsed: data?.modelUsed || activeModel,
+        content: accumulatedText,
+        modelUsed: finalModelUsed,
         codeSnippet: codeSnippetData,
       };
 
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessages((prev) => {
+        const updated = prev.map((m) => (m.id === assistantId ? assistantMsg : m));
+        saveOrUpdateSession(updated, sessionId, textToSend, selectedTopic, difficulty);
+        return updated;
+      });
     } catch (err: any) {
       if (err?.name === "AbortError") {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: "*(Generation interrupted by user)*",
-          },
-        ]);
+        const interruptedMsg: Message = {
+          id: assistantId,
+          role: "assistant",
+          content: accumulatedText
+            ? `${accumulatedText}\n\n*(Generation interrupted by user)*`
+            : "*(Generation interrupted by user)*",
+          modelUsed: finalModelUsed,
+        };
+        setMessages((prev) => {
+          const updated = prev.map((m) => (m.id === assistantId ? interruptedMsg : m));
+          saveOrUpdateSession(updated, sessionId, textToSend, selectedTopic, difficulty);
+          return updated;
+        });
       } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: `❌ **Error**: \`${err?.message || "Failed to communicate with AI server"}\`\n\n*Please verify your API key and connection settings in Settings (⚙️).*`,
-          },
-        ]);
+        const errorMsg: Message = {
+          id: assistantId,
+          role: "assistant",
+          content: `❌ **Error**: \`${err?.message || "Failed to communicate with AI server"}\`\n\n*Please verify your API key and connection settings in Settings (⚙️).*`,
+          modelUsed: finalModelUsed,
+        };
+        setMessages((prev) => {
+          const updated = prev.map((m) => (m.id === assistantId ? errorMsg : m));
+          saveOrUpdateSession(updated, sessionId, textToSend, selectedTopic, difficulty);
+          return updated;
+        });
       }
     } finally {
       setIsLoading(false);
+      setStreamingMessageId(null);
       abortControllerRef.current = null;
       if (isImageMode) setIsImageMode(false);
     }
@@ -1071,6 +1808,11 @@ export default function AiWorkspace() {
   };
 
   const startNewChat = () => {
+    if (isLoading) {
+      handleCancelGeneration();
+    }
+    setCurrentSessionId(null);
+    setStreamingMessageId(null);
     setActiveView("chat");
     setMessages([]);
     setPrompt("");
@@ -1107,19 +1849,602 @@ export default function AiWorkspace() {
   const username = session?.user?.name || (session?.user as any)?.username || "Developer";
   const userEmail = session?.user?.email || "";
 
+  const renderPromptBox = () => (
+    <div
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      className="relative z-30 w-full bg-[#ECE8DF]/70 dark:bg-[#282624]/70 backdrop-blur-xl border border-[#DFDAD0] dark:border-[#383532] rounded-2xl shadow-lg shadow-black/[0.02] dark:shadow-black/20 p-3.5 transition-all focus-within:border-black/20 dark:focus-within:border-white/20"
+    >
+      {/* Hidden File Input for Any Extension */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleFiles(e.target.files);
+            e.target.value = "";
+          }
+        }}
+      />
+
+      {/* Skill Mention Autocomplete Popup */}
+      {showSkillMenu && matchingSkills.length > 0 && (
+        <div
+          ref={skillMenuRef}
+          className="absolute bottom-full left-0 mb-2 w-80 bg-white dark:bg-[#1E1D1B] border border-[#DFDAD0] dark:border-[#383532] rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2"
+        >
+          <div className="px-3 py-1.5 bg-black/[0.03] dark:bg-white/[0.04] border-b border-black/[0.04] dark:border-white/[0.04] flex items-center justify-between text-[11px] text-neutral-500 font-medium">
+            <span>Mention AI Skill</span>
+            <span className="text-[10px]">↑↓ navigate • Enter/Tab insert</span>
+          </div>
+          <div className="max-h-52 overflow-y-auto p-1 space-y-0.5">
+            {matchingSkills.map((skill, idx) => (
+              <button
+                key={skill.id}
+                type="button"
+                onClick={() => handleSelectSkillMention(skill.mentionKey)}
+                onMouseEnter={() => setSelectedSkillMenuIndex(idx)}
+                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between cursor-pointer transition-colors ${
+                  selectedSkillMenuIndex === idx
+                    ? "bg-amber-500 text-white font-medium"
+                    : "text-neutral-800 dark:text-neutral-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                }`}
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <span className="font-mono font-bold text-[11px]">{skill.mentionKey}</span>
+                  <span className="truncate text-[11px] opacity-85">{skill.name}</span>
+                </div>
+                <span className="text-[10px] opacity-70 ml-2 uppercase font-semibold shrink-0">
+                  {skill.badge}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Drag & Drop Overlay inside Prompt Box */}
+      {isDragging && (
+        <div className="absolute inset-0 z-50 bg-[#ECE8DF]/95 dark:bg-[#282624]/95 backdrop-blur-xs rounded-2xl border-2 border-dashed border-neutral-400 dark:border-neutral-600 flex flex-col items-center justify-center text-center p-6 space-y-2 animate-in fade-in duration-150">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] text-neutral-700 dark:text-neutral-200">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div className="p-2.5 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] text-neutral-700 dark:text-neutral-200">
+              <ImageIcon className="w-5 h-5" />
+            </div>
+            <div className="p-2.5 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] text-neutral-700 dark:text-neutral-200">
+              <FileCode className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
+              Drag & drop files to upload
+            </h3>
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+              or <span className="underline cursor-pointer" onClick={() => fileInputRef.current?.click()}>browse file</span> on your computer
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Uploaded Document Chips */}
+      {uploadedDocs.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap pb-2 mb-2 border-b border-black/[0.04] dark:border-white/[0.04]">
+          {uploadedDocs.map((doc) => {
+            const Icon = getFileIcon(doc.name);
+            return (
+              <div
+                key={doc.id}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 dark:bg-[#1e1d1b] border border-black/[0.08] dark:border-white/[0.08] text-xs font-medium text-neutral-800 dark:text-neutral-200 shadow-2xs animate-in fade-in"
+              >
+                {doc.isUploading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-500" />
+                ) : (
+                  <Icon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-400" />
+                )}
+                <span className="truncate max-w-[140px]">{doc.name}</span>
+                <button
+                  onClick={() => handleRemoveDoc(doc.id)}
+                  className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-neutral-400 hover:text-neutral-700 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Active Mode Badges */}
+      {(isImageMode || isOnlineEnabled) && (
+        <div className="flex items-center gap-1.5 flex-wrap pb-2 mb-1.5">
+          {isImageMode && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-[#EFECE6] dark:bg-[#2A2825] text-[#1C1B19] dark:text-[#EDEDEB] border border-[#DFDAD0] dark:border-[#383532] shadow-2xs animate-in fade-in">
+              <ImageIcon className="w-3.5 h-3.5 text-[#524E48] dark:text-[#A8A49D]" />
+              <span>Image Mode</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-600 dark:bg-amber-400" />
+              <button
+                type="button"
+                onClick={() => setIsImageMode(false)}
+                className="hover:text-black dark:hover:text-white ml-0.5 transition-colors cursor-pointer text-[#8C877D]"
+                title="Disable Image Mode"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+          {isOnlineEnabled && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-[#EFECE6] dark:bg-[#2A2825] text-[#1C1B19] dark:text-[#EDEDEB] border border-[#DFDAD0] dark:border-[#383532] shadow-2xs animate-in fade-in">
+              <Globe className="w-3.5 h-3.5 text-[#524E48] dark:text-[#A8A49D]" />
+              <span>Web Search Active</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+              <button
+                type="button"
+                onClick={() => setIsOnlineEnabled(false)}
+                className="hover:text-black dark:hover:text-white ml-0.5 transition-colors cursor-pointer text-[#8C877D]"
+                title="Disable Web Search"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Text Input or Audio Visualizer */}
+      {isRecordingAudio ? (
+        <div className="py-1">
+          <AudioRecordingVisualizer
+            isOpen={isRecordingAudio}
+            onTranscription={(text) => {
+              setPrompt((prev) => (prev ? `${prev} ${text}` : text));
+              setIsRecordingAudio(false);
+              setTimeout(() => textareaRef.current?.focus(), 50);
+            }}
+            onCancel={() => setIsRecordingAudio(false)}
+            customKeys={apiKeys}
+          />
+        </div>
+      ) : (
+        <textarea
+          ref={textareaRef}
+          value={prompt}
+          onChange={handlePromptChange}
+          onKeyDown={handlePromptKeyDown}
+          placeholder={
+            isImageMode
+              ? "Describe the visual flowchart, system architecture, or diagram to generate..."
+              : currentModeData.placeholder
+          }
+          className="w-full bg-transparent resize-none outline-hidden text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#736F68] text-sm md:text-base min-h-[56px] leading-relaxed"
+          rows={2}
+        />
+      )}
+
+      {/* Bottom Toolbar: STRICTLY SINGLE ROW, NEVER WRAPS */}
+      <div className="pt-2.5 border-t border-black/[0.04] dark:border-white/[0.04] flex items-center justify-between gap-2">
+        
+        {/* Left Controls: Plus, Mode, Model, Visual Engine */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Plus (+) Button */}
+          <div className="relative shrink-0" ref={plusMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowPlusMenu(!showPlusMenu)}
+              className={`w-8 h-8 rounded-xl border transition-all flex items-center justify-center cursor-pointer shadow-2xs ${
+                showPlusMenu
+                  ? "bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] border-transparent"
+                  : "border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] text-neutral-700 dark:text-neutral-300"
+              }`}
+              title="Attach files, skills, and tools"
+            >
+              <Plus className={`w-4 h-4 transition-transform duration-200 ${showPlusMenu ? "rotate-45" : ""}`} />
+            </button>
+
+            {showPlusMenu && (
+              <div
+                className="absolute bottom-full left-0 mb-2.5 w-72 md:w-84 bg-[#FBF9F4] dark:bg-[#1E1D1B] border border-[#DFDAD0] dark:border-[#383532] rounded-2xl shadow-xl dark:shadow-2xl p-1.5 z-50 animate-in fade-in text-xs"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPlusMenu(false);
+                    fileInputRef.current?.click();
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
+                >
+                  <Paperclip className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
+                  <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                    <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">Add photos & files</span>
+                    <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Upload from computer</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPlusMenu(false);
+                    if (userHistory.length > 0) {
+                      toast.info(`Viewing recent library (${userHistory.length} saved sessions)`);
+                    } else {
+                      toast.info("No saved library items yet. Your generated problems and files will appear here.");
+                    }
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
+                >
+                  <FolderOpen className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
+                  <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                    <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">Add from library</span>
+                    <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Browse and search your files</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPlusMenu(false);
+                    const next = !isImageMode;
+                    setIsImageMode(next);
+                    if (next) {
+                      toast.success("Image Generation Mode enabled: Describe any visual, diagram, or artwork.");
+                    } else {
+                      toast.info("Image Generation Mode disabled");
+                    }
+                    textareaRef.current?.focus();
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
+                >
+                  <ImageIcon className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
+                  <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                    <span className="font-medium text-[#1C1B19] dark:text-white text-[13px] flex items-center gap-1.5">
+                      <span>Create image</span>
+                      {isImageMode && <span className="w-1.5 h-1.5 rounded-full bg-amber-600 dark:bg-amber-400" />}
+                    </span>
+                    <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">FLUX.1 / DALL-E</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPlusMenu(false);
+                    setPrompt("/video ");
+                    textareaRef.current?.focus();
+                    toast.info("Video Generation: Type what video or motion you want to render.");
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
+                >
+                  <Film className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
+                  <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                    <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">
+                      <span>Generate video</span>
+                    </span>
+                    <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Motion AI / Wan 2.1</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPlusMenu(false);
+                    setPrompt("/flowchart ");
+                    textareaRef.current?.focus();
+                    toast.info("Flowchart Studio: Describe the system architecture, logic loop, or algorithm flow.");
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
+                >
+                  <Network className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
+                  <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                    <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">
+                      <span>Build flowchart</span>
+                    </span>
+                    <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Mermaid Architecture</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPlusMenu(false);
+                    const next = !isOnlineEnabled;
+                    setIsOnlineEnabled(next);
+                    if (next) {
+                      toast.success("Web search enabled: Real-time info");
+                    } else {
+                      toast.info("Web search disabled");
+                    }
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
+                >
+                  <Globe className="w-4 h-4 shrink-0 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white transition-colors" />
+                  <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                    <span className="font-medium text-[#1C1B19] dark:text-white text-[13px] flex items-center gap-1.5">
+                      <span>Web search</span>
+                      {isOnlineEnabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />}
+                    </span>
+                    <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Find real-time news and info</span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Mode Pill */}
+          <div className="relative shrink-0" ref={topicDropdownRef}>
+            <button
+              onClick={() => setShowTopicDropdown(!showTopicDropdown)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] text-[#4A4640] dark:text-[#C5C2BA] shadow-2xs transition-colors shrink-0 whitespace-nowrap cursor-pointer"
+            >
+              <Layers className="w-3.5 h-3.5 opacity-60 shrink-0" />
+              <span className="truncate max-w-[110px]">{selectedTopic || activeMode}</span>
+              <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+            </button>
+
+            {showTopicDropdown && (
+              <div className="absolute bottom-full left-0 mb-2.5 w-52 max-h-56 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-xl py-1 z-50 text-xs">
+                <button
+                  onClick={() => {
+                    setSelectedTopic("");
+                    setShowTopicDropdown(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors flex items-center justify-between ${
+                    !selectedTopic ? "text-neutral-950 dark:text-white font-semibold bg-black/[0.03] dark:bg-white/[0.05]" : "text-[#524E48] dark:text-[#A8A49D]"
+                  }`}
+                >
+                  <span>Any / None (Default)</span>
+                  {!selectedTopic && <Check className="w-3 h-3" />}
+                </button>
+                <div className="my-1 border-t border-black/[0.04] dark:border-white/[0.04]" />
+                {topicsList.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      setSelectedTopic(t);
+                      setShowTopicDropdown(false);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors flex items-center justify-between ${
+                      selectedTopic === t ? "text-neutral-950 dark:text-white font-semibold bg-black/[0.03] dark:bg-white/[0.05]" : "text-[#524E48] dark:text-[#A8A49D]"
+                    }`}
+                  >
+                    <span>{t}</span>
+                    {selectedTopic === t && <Check className="w-3 h-3" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Model Selection Pill */}
+          <div className="relative shrink-0" ref={chatModelDropdownRef}>
+            <button
+              onClick={() => setShowChatModelDropdown(!showChatModelDropdown)}
+              className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs transition-colors font-medium shrink-0 whitespace-nowrap cursor-pointer"
+            >
+              <ProviderLogo provider={activeModelObj?.provider} modelId={activeModel} className="w-3.5 h-3.5 text-current shrink-0" />
+              <span className="truncate max-w-[130px]">
+                {activeModelObj ? cleanModelName(activeModelObj.name) : "Select Model"}
+              </span>
+              <ChevronDown className="w-3 h-3 opacity-60 ml-0.5 shrink-0" />
+            </button>
+
+            {showChatModelDropdown && (
+              <div className="absolute bottom-full left-0 mb-2.5 w-72 max-h-60 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-2xl py-1 z-50 text-xs font-mono">
+                {availableModelsList.length === 0 ? (
+                  <div className="p-4 text-center space-y-2.5 font-sans">
+                    <AlertCircle className="w-5 h-5 mx-auto text-amber-500 opacity-80" />
+                    <div className="space-y-1">
+                      <p className="font-semibold text-neutral-900 dark:text-white text-xs">
+                        No Active Models
+                      </p>
+                      <p className="text-[11px] text-neutral-500 leading-relaxed">
+                        Add an API key in Settings to activate your models.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowChatModelDropdown(false);
+                        setActiveView("settings");
+                      }}
+                      className="w-full py-1.5 px-3 rounded-lg bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      Configure API Keys in Settings →
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="p-2 border-b border-black/[0.04] dark:border-white/[0.04]">
+                      <input
+                        type="search"
+                        name="in-chat-model-search-filter"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-form-type="other"
+                        data-1p-ignore="true"
+                        data-lpignore="true"
+                        data-bwignore="true"
+                        value={modelDropdownSearch}
+                        onChange={(e) => setModelDropdownSearch(e.target.value)}
+                        placeholder="Search available models..."
+                        className="w-full px-2.5 py-1 text-xs rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-neutral-200 dark:border-neutral-700 outline-hidden font-sans"
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="py-1">
+                      {filteredDropdownModels.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => handleSelectModel(m)}
+                          className={`w-full text-left px-3 py-2 transition-colors flex items-center justify-between ${
+                            activeModel === m.id
+                              ? "bg-black/[0.05] dark:bg-white/[0.08] text-neutral-950 dark:text-white font-semibold"
+                              : "text-[#524E48] dark:text-[#A8A49D] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <ProviderLogo provider={m.provider} modelId={m.id} className="w-3.5 h-3.5 shrink-0 text-current" />
+                            <div className="flex flex-col">
+                              <span className="truncate">{cleanModelName(m.name)}</span>
+                              <span className="text-[10px] font-sans opacity-60">{m.provider} • {m.badge}</span>
+                            </div>
+                          </div>
+                          {activeModel === m.id && <Check className="w-3.5 h-3.5" />}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="pt-1 mt-1 border-t border-black/[0.04] dark:border-white/[0.04] px-2 pb-1">
+                      <button
+                        onClick={() => {
+                          setShowChatModelDropdown(false);
+                          setActiveView("settings");
+                        }}
+                        className="w-full text-center py-1.5 text-[11px] font-sans font-medium text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg transition-colors"
+                      >
+                        Add More Keys in Settings →
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Visual & Media Engine Selection Pill */}
+          <div className="relative shrink-0" ref={visualEngineDropdownRef}>
+            <button
+              onClick={() => setShowVisualEngineDropdown(!showVisualEngineDropdown)}
+              className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs transition-colors font-medium shrink-0 whitespace-nowrap cursor-pointer"
+              title="Select Image & Video Generation Engine"
+            >
+              <ProviderLogo provider={activeVisualEngineObj.provider} modelId={activeVisualEngineObj.id} className="w-3.5 h-3.5 text-current shrink-0" />
+              <span className="truncate max-w-[130px]">
+                {cleanModelName(activeVisualEngineObj.name)}
+              </span>
+              <ChevronDown className="w-3 h-3 opacity-60 ml-0.5 shrink-0" />
+            </button>
+
+            {showVisualEngineDropdown && (
+              <div className="absolute bottom-full left-0 mb-2.5 w-76 max-h-72 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-2xl py-1 z-50 text-xs font-mono">
+                <div className="p-2 border-b border-black/[0.04] dark:border-white/[0.04]">
+                  <input
+                    type="search"
+                    name="in-chat-visual-engine-search"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    data-form-type="other"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
+                    value={visualEngineSearch}
+                    onChange={(e) => setVisualEngineSearch(e.target.value)}
+                    placeholder="Search media engines..."
+                    className="w-full px-2.5 py-1 text-xs rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-neutral-200 dark:border-neutral-700 outline-hidden font-sans"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="py-1">
+                  {filteredVisualEngines.map((eng) => (
+                    <button
+                      key={eng.id}
+                      onClick={() => {
+                        setActiveVisualEngine(eng.id);
+                        try {
+                          localStorage.setItem("easycode_visual_engine", eng.id);
+                        } catch (e) {}
+                        setShowVisualEngineDropdown(false);
+                        toast.success(`Selected ${cleanModelName(eng.name)} for image/video generation`);
+                      }}
+                      className={`w-full text-left px-3 py-2 transition-colors flex items-center justify-between ${
+                        activeVisualEngine === eng.id
+                          ? "bg-black/[0.05] dark:bg-white/[0.08] text-neutral-950 dark:text-white font-semibold"
+                          : "text-[#524E48] dark:text-[#A8A49D] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <ProviderLogo provider={eng.provider} modelId={eng.id} className="w-3.5 h-3.5 shrink-0 text-current" />
+                        <div className="flex flex-col">
+                          <span className="truncate">{cleanModelName(eng.name)}</span>
+                          <span className="text-[10px] font-sans opacity-60">{eng.provider} • {eng.badge}</span>
+                        </div>
+                      </div>
+                      {activeVisualEngine === eng.id && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Action Icons: Mic & Send Button */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsRecordingAudio((prev) => !prev)}
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer shrink-0 ${
+              isRecordingAudio
+                ? "bg-black/[0.08] text-neutral-900 dark:bg-white/[0.1] dark:text-white animate-pulse"
+                : "text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white"
+            }`}
+            title={isRecordingAudio ? "Stop voice input" : "Voice input (Groq Whisper Large v3)"}
+          >
+            <Mic className="w-4 h-4" />
+          </button>
+
+          {/* Send / Stop Button */}
+          {isLoading ? (
+            <button
+              onClick={handleCancelGeneration}
+              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-xs bg-[#1C1B19] text-white hover:bg-black dark:bg-white dark:text-[#1C1B19] dark:hover:bg-neutral-100 shrink-0"
+              title="Stop generating"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              onClick={() => handleSend()}
+              disabled={!prompt.trim() && uploadedDocs.length === 0}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-xs shrink-0 ${
+                prompt.trim() || uploadedDocs.length > 0
+                  ? "bg-[#1C1B19] text-white hover:bg-black dark:bg-white dark:text-[#1C1B19] dark:hover:bg-neutral-100 shadow-neutral-900/10"
+                  : "bg-black/[0.06] dark:bg-white/[0.06] text-[#9E9A91] dark:text-[#615E57] cursor-not-allowed"
+              }`}
+              title="Send message"
+            >
+              <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   if (!mounted) return null;
 
   return (
-    <div className="min-h-screen w-full bg-[#FBF9F4] dark:bg-[#1C1B19] text-[#1C1B19] dark:text-[#E8E6E3] flex flex-col transition-colors duration-300 font-sans selection:bg-neutral-500/20">
+    <div className="h-screen max-h-screen w-full bg-[#FBF9F4] dark:bg-[#1C1B19] text-[#1C1B19] dark:text-[#E8E6E3] flex flex-col overflow-hidden transition-colors duration-300 font-sans selection:bg-neutral-500/20">
       
       {/* Hidden dummy inputs to absorb aggressive browser autofill */}
       <input type="text" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" autoComplete="off" />
       <input type="password" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" autoComplete="off" />
 
-      {/* Subtle animated vertical neutral grid texture starting exactly below the navbar (top-14 = 56px) */}
-      <div className="fixed top-14 inset-x-0 bottom-0 pointer-events-none z-0 overflow-hidden">
-        <div className="absolute -inset-x-32 inset-y-0 opacity-[0.06] dark:opacity-[0.08] bg-[linear-gradient(to_right,#000_1px,transparent_1px),linear-gradient(to_bottom,#000_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#fff_1px,transparent_1px),linear-gradient(to_bottom,#fff_1px,transparent_1px)] bg-[size:64px_64px] animate-grid-left" />
-      </div>
+      {/* Subtle animated vertical neutral grid texture - Only before first prompt is sent */}
+      {messages.length === 0 && (
+        <div className="fixed top-14 inset-x-0 bottom-0 pointer-events-none z-0 overflow-hidden">
+          <div className="absolute -inset-x-32 inset-y-0 opacity-[0.06] dark:opacity-[0.08] bg-[linear-gradient(to_right,#000_1px,transparent_1px),linear-gradient(to_bottom,#000_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#fff_1px,transparent_1px),linear-gradient(to_bottom,#fff_1px,transparent_1px)] bg-[size:64px_64px] animate-grid-left" />
+        </div>
+      )}
 
       {/* TOP HEADER */}
       <header className="h-14 border-b border-[#E8E4DB] dark:border-[#2D2B28] px-4 flex items-center justify-between relative z-40 bg-[#FBF9F4]/80 dark:bg-[#1C1B19]/80 backdrop-blur-md">
@@ -1447,22 +2772,48 @@ export default function AiWorkspace() {
                   <p className="text-[10px] opacity-70">Type below to generate your first problem.</p>
                 </div>
               ) : (
-                <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                  {filteredHistory.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleSend(item.title)}
-                      className="w-full text-left p-2 rounded-lg hover:bg-black/[0.04] dark:hover:bg-white/[0.04] text-xs transition-colors group flex flex-col gap-0.5"
-                    >
-                      <div className="flex items-center justify-between text-[10px] text-neutral-400">
-                        <span>{item.level || "Challenge"}</span>
-                        <span>{item.time}</span>
+                <div className="space-y-1 max-h-56 overflow-y-auto -mr-2.5 pr-2 pl-0.5">
+                  {filteredHistory.map((item) => {
+                    const isActive = currentSessionId === item.id;
+                    const tagLabel = item.level
+                      ? item.level
+                      : item.topic && item.topic !== "General"
+                      ? item.topic
+                      : "Chat";
+
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => handleLoadHistorySession(item)}
+                        className={`w-full text-left p-2 rounded-xl text-xs transition-all cursor-pointer group flex items-center justify-between gap-2 ${
+                          isActive
+                            ? "bg-black/[0.06] dark:bg-white/[0.08] text-black dark:text-white font-medium shadow-2xs"
+                            : "hover:bg-black/[0.04] dark:hover:bg-white/[0.04] text-[#3A3733] dark:text-[#C5C2BA]"
+                        }`}
+                        title={item.title}
+                      >
+                        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                          <div className="flex items-center justify-between text-[10px] text-neutral-400">
+                            <span className="font-semibold">{tagLabel}</span>
+                            <span>{formatRealTimestamp(item.timestamp || item.time)}</span>
+                          </div>
+                          <span className="truncate font-medium group-hover:text-black dark:group-hover:text-white">
+                            {item.title}
+                          </span>
+                        </div>
+
+                        {/* Delete Conversation Button (Theme-wise) */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteConversation(item.id, e)}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-neutral-400 hover:text-[#1C1B19] dark:hover:text-[#EDEDEB] transition-all shrink-0 cursor-pointer"
+                          title="Delete conversation"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      <span className="text-[#3A3733] dark:text-[#C5C2BA] truncate font-medium group-hover:text-black dark:group-hover:text-white">
-                        {item.title}
-                      </span>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1479,826 +2830,371 @@ export default function AiWorkspace() {
         </aside>
 
         {/* MAIN CANVAS */}
-        <main className="flex-1 overflow-y-auto flex flex-col items-center px-4 py-8 md:py-12">
+        <main className="flex-1 min-h-0 overflow-hidden flex flex-col relative w-full">
           
           {/* RENDER SETTINGS VIEW WHEN ACTIVE */}
           {activeView === "settings" ? (
-            <SettingsView currentModel={activeModel} onModelSelect={setActiveModel} />
+            <div className="flex-1 overflow-y-auto px-4 py-8 md:py-12 flex justify-center w-full">
+              <SettingsView
+                currentModel={activeModel}
+                onModelSelect={(id) => {
+                  setActiveModel(id);
+                  try {
+                    localStorage.setItem("easycode_last_active_model", id);
+                  } catch (e) {}
+                }}
+              />
+            </div>
           ) : (
-            /* RENDER CHAT / PROBLEM GENERATOR CANVAS */
-            <div className="w-full max-w-2xl flex flex-col items-center gap-7">
+            <div className="flex-1 flex flex-col min-h-0 relative w-full overflow-hidden">
               
-              {/* HERO GREETING */}
-              {messages.length === 0 && (
-                <div className="text-center space-y-0.5 mb-2">
-                  <h1 className="text-3xl md:text-4xl font-serif text-[#1C1B19] dark:text-[#EDEDEB] tracking-tight">
-                    Hey <span className="italic font-normal">{username}</span>
-                  </h1>
-                  <p className="text-3xl md:text-4xl font-serif text-[#1C1B19] dark:text-[#EDEDEB] tracking-tight">
-                    What can I help you code today?
-                  </p>
-                </div>
-              )}
-
-              {/* CONVERSATION STREAM */}
-              {messages.length > 0 && (
-                <div className="w-full space-y-5 mb-4">
-                  {messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
-                    >
-                      <div
-                        className={`max-w-[95%] rounded-2xl p-5 text-sm leading-relaxed ${
-                          msg.role === "user"
-                            ? "bg-neutral-900 text-white dark:bg-[#33312E] dark:text-neutral-100 rounded-tr-xs"
-                            : "bg-white dark:bg-[#242321] border border-[#E8E4DB] dark:border-[#33302C] text-[#242220] dark:text-[#E2DFD8] shadow-sm rounded-tl-xs"
-                        }`}
-                      >
-                        {msg.generatedProblem ? (
-                          <div className="w-full">
-                            <GammaProblemCanvas
-                              problem={msg.generatedProblem}
-                              onSolveInEditor={() => {
-                                window.location.href = "/problem/c0000000-0000-0000-0000-000000000001";
-                              }}
-                            />
-                          </div>
-                        ) : msg.problemDetails ? (
-                          <div className="mb-4 pb-4 border-b border-black/[0.08] dark:border-white/[0.08]">
-                            <div className="flex items-center justify-between gap-2 mb-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full border border-neutral-300 dark:border-neutral-700 bg-neutral-100/60 dark:bg-neutral-800/60 text-neutral-800 dark:text-neutral-200">
-                                  {msg.problemDetails.level}
-                                </span>
-                                <h3 className="font-semibold text-lg text-neutral-900 dark:text-neutral-100">
-                                  {msg.problemDetails.title}
-                                </h3>
-                              </div>
-
-                              <Link
-                                href="/problem/c0000000-0000-0000-0000-000000000001"
-                                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100 shadow-xs transition-colors shrink-0"
-                              >
-                                <Play className="w-3.5 h-3.5 fill-current" />
-                                <span>Solve in Editor</span>
-                              </Link>
-                            </div>
-
-                            {msg.problemDetails.examples && (
-                              <div className="mt-3 p-3 rounded-xl bg-black/[0.03] dark:bg-white/[0.03] text-xs font-mono space-y-1">
-                                <div className="font-semibold text-neutral-800 dark:text-neutral-200">Examples:</div>
-                                <pre className="whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
-                                  {typeof msg.problemDetails.examples === 'string' ? msg.problemDetails.examples : JSON.stringify(msg.problemDetails.examples, null, 2)}
-                                </pre>
-                              </div>
-                            )}
-
-                            {msg.problemDetails.constraints && (
-                              <div className="mt-2 p-3 rounded-xl bg-black/[0.03] dark:bg-white/[0.03] text-xs font-mono space-y-1">
-                                <div className="font-semibold text-neutral-800 dark:text-neutral-200">Constraints:</div>
-                                <pre className="whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
-                                  {Array.isArray(msg.problemDetails.constraints) ? msg.problemDetails.constraints.join('\n') : msg.problemDetails.constraints}
-                                </pre>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          renderFormattedMessage(msg.content)
-                        )}
-
-                        {msg.role === "assistant" && !msg.generatedProblem && (
-                          <div className="mt-2.5 pt-1.5 border-t border-black/[0.04] dark:border-white/[0.04] flex items-center justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-                            {/* Solve in Problem Editor button if problem content detected */}
-                            {(msg.content.includes("# Problem") || msg.content.includes("Problem Description") || msg.content.includes("Difficulty:")) ? (
-                              <button
-                                onClick={() => {
-                                  try {
-                                    sessionStorage.setItem("easycode_live_generate_prompt", msg.content);
-                                  } catch (e) {}
-                                  window.location.href = `/problem/new?generate=true&prompt=${encodeURIComponent(msg.content.substring(0, 150))}`;
-                                }}
-                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] hover:opacity-90 transition-opacity font-medium text-[11px] cursor-pointer shadow-2xs"
-                              >
-                                <Zap className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                <span>Solve in Problem Editor ↗</span>
-                              </button>
-                            ) : <div />}
-
-                            {/* Copy Text */}
-                            <button
-                              onClick={() => copyText(msg.content, msg.id)}
-                              className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-[11px]"
-                              title="Copy response"
-                            >
-                              {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                              <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
-                            </button>
-                          </div>
-                        )}
-
-                        {!msg.generatedProblem && msg.codeSnippet && (
-                          <div className="mt-4 rounded-xl bg-[#181716] p-3.5 border border-white/[0.08] text-xs font-mono text-neutral-200">
-                            <div className="flex items-center justify-between pb-2 border-b border-white/[0.06] text-[11px] text-neutral-400 uppercase font-semibold">
-                              <span>Starter Solution ({msg.codeSnippet.language})</span>
-                              <div className="flex items-center gap-3">
-                                <button
-                                  onClick={() => {
-                                    const ext = getLanguageExtension(msg.codeSnippet?.language);
-                                    downloadFile(`solution.${ext}`, msg.codeSnippet?.code || "");
-                                  }}
-                                  className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
-                                  title="Download code file"
-                                >
-                                  <Download className="w-3 h-3" />
-                                  <span>Download</span>
-                                </button>
-                                <button
-                                  onClick={() => copyText(msg.codeSnippet?.code || "", msg.id)}
-                                  className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
-                                >
-                                  {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                                  <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
-                                </button>
-                              </div>
-                            </div>
-                            <pre className="mt-2 overflow-x-auto p-1 leading-relaxed text-neutral-300">
-                              {msg.codeSnippet.code}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
-                  {isLoading && (
-                    <div className="flex items-center gap-2 text-xs p-3 animate-in fade-in">
-                      <Sparkles className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
-                      <div className="flex items-center italic text-xs font-mono font-medium text-neutral-800 dark:text-neutral-200 select-none">
-                        <span>{currentVerb}</span>
-                        <span className="text-amber-500 font-bold tracking-widest ml-0.5 inline-block min-w-[20px] text-left">{DOT_SEQUENCE[dotIndex]}</span>
-                      </div>
-                    </div>
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-              )}
-
-              {/* SKILLS PILLS TOOLBAR (Quickly trigger PPT, PDF, DOCX, Canvas, etc.) */}
-              <div className="w-full flex items-center justify-between gap-2 overflow-x-auto no-scrollbar pb-1 select-none">
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                  <span className="text-[11px] font-semibold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider flex items-center gap-1 shrink-0 pr-1">
-                    <Sparkles className="w-3 h-3 text-amber-500" />
-                    <span>Skills:</span>
-                  </span>
-                  {skills.filter((s) => s.enabled).map((skill) => {
-                    const isMentioned = prompt.includes(skill.mentionKey);
-                    return (
-                      <button
-                        key={skill.id}
-                        type="button"
-                        onClick={() => handleToggleSkillMention(skill.mentionKey)}
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                          isMentioned
-                            ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] border-transparent shadow-2xs font-semibold"
-                            : "bg-[#FBF9F4] dark:bg-[#1C1B19] border-[#DFDAD0] dark:border-[#383532] text-neutral-700 dark:text-neutral-300 hover:bg-white dark:hover:bg-[#252321]"
-                        }`}
-                        title={skill.description}
-                      >
-                        <span className="font-mono text-[11px] text-amber-600 dark:text-amber-400 font-semibold">{skill.mentionKey}</span>
-                        <span className="text-[10px] opacity-75">{skill.badge}</span>
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => setActiveView("settings")}
-                    className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-[#DFDAD0] dark:border-[#383532] text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-white dark:hover:bg-[#252321] transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                    title="Configure or create custom AI skills"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>More Skills</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* MAIN INPUT PROMPT BOX (Styled to Match Image 1 & 2) */}
+              {/* SCROLLABLE VIEWPORT */}
               <div
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                className="relative w-full bg-[#ECE8DF]/70 dark:bg-[#282624]/70 backdrop-blur-xl border border-[#DFDAD0] dark:border-[#383532] rounded-2xl shadow-lg shadow-black/[0.02] dark:shadow-black/20 p-3.5 transition-all focus-within:border-black/20 dark:focus-within:border-white/20"
+                ref={scrollContainerRef}
+                onScroll={handleContainerScroll}
+                className="flex-1 overflow-y-auto flex flex-col items-center px-4 pt-6 pb-40 w-full"
               >
-                {/* Hidden File Input for Any Extension */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      handleFiles(e.target.files);
-                      e.target.value = "";
-                    }
-                  }}
-                />
-
-                {/* Skill Mention Autocomplete Popup */}
-                {showSkillMenu && matchingSkills.length > 0 && (
-                  <div
-                    ref={skillMenuRef}
-                    className="absolute bottom-full left-0 mb-2 w-80 bg-white dark:bg-[#1E1D1B] border border-[#DFDAD0] dark:border-[#383532] rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2"
-                  >
-                    <div className="px-3 py-1.5 bg-black/[0.03] dark:bg-white/[0.04] border-b border-black/[0.04] dark:border-white/[0.04] flex items-center justify-between text-[11px] text-neutral-500 font-medium">
-                      <span>Mention AI Skill</span>
-                      <span className="text-[10px]">↑↓ navigate • Enter/Tab insert</span>
+                
+                {/* EMPTY STATE: Compact max-w-2xl container (user's preferred classic sizes) */}
+                {messages.length === 0 ? (
+                  <div className="w-full max-w-2xl flex flex-col items-center gap-6">
+                    {/* HERO GREETING */}
+                    <div className="text-center space-y-1 my-3">
+                      <h1 className="text-3xl md:text-4xl font-serif text-[#1C1B19] dark:text-[#EDEDEB] tracking-tight">
+                        Hey <span className="italic font-normal">{username}</span>
+                      </h1>
+                      <p className="text-3xl md:text-4xl font-serif text-[#1C1B19] dark:text-[#EDEDEB] tracking-tight">
+                        What can I help you code today?
+                      </p>
                     </div>
-                    <div className="max-h-52 overflow-y-auto p-1 space-y-0.5">
-                      {matchingSkills.map((skill, idx) => (
+
+                    {/* SKILLS PILLS TOOLBAR (Visible ONLY on empty initial screen, disappears after first prompt) */}
+                    <div className="w-full flex items-center justify-between gap-2 overflow-x-auto no-scrollbar pb-1 select-none">
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                        <span className="text-[11px] font-semibold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider flex items-center gap-1 shrink-0 pr-1">
+                          <Sparkles className="w-3 h-3 text-amber-500" />
+                          <span>Skills:</span>
+                        </span>
+                        {skills.filter((s) => s.enabled).map((skill) => {
+                          const isMentioned = prompt.includes(skill.mentionKey);
+                          return (
+                            <button
+                              key={skill.id}
+                              type="button"
+                              onClick={() => handleToggleSkillMention(skill.mentionKey)}
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                                isMentioned
+                                  ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] border-transparent shadow-2xs font-semibold"
+                                  : "bg-[#FBF9F4] dark:bg-[#1C1B19] border-[#DFDAD0] dark:border-[#383532] text-neutral-700 dark:text-neutral-300 hover:bg-white dark:hover:bg-[#252321]"
+                              }`}
+                              title={skill.description}
+                            >
+                              <span className="font-mono text-[11px] text-amber-600 dark:text-amber-400 font-semibold">{skill.mentionKey}</span>
+                              <span className="text-[10px] opacity-75">{skill.badge}</span>
+                            </button>
+                          );
+                        })}
                         <button
-                          key={skill.id}
                           type="button"
-                          onClick={() => handleSelectSkillMention(skill.mentionKey)}
-                          onMouseEnter={() => setSelectedSkillMenuIndex(idx)}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                            selectedSkillMenuIndex === idx
-                              ? "bg-amber-500 text-white font-medium"
-                              : "text-neutral-800 dark:text-neutral-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                          onClick={() => setActiveView("settings")}
+                          className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-[#DFDAD0] dark:border-[#383532] text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-white dark:hover:bg-[#252321] transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                          title="Configure or create custom AI skills"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>More Skills</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* MAIN INPUT PROMPT BOX (Centered in Empty Screen) */}
+                    {renderPromptBox()}
+
+                    {/* QUICK MODE SELECTION PILLS */}
+                    <div className="flex items-center justify-center gap-2 flex-wrap w-full">
+                      {platformModes.map(({ label, icon: Icon }) => (
+                        <button
+                          key={label}
+                          onClick={() => setActiveMode(label)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all flex items-center gap-1.5 ${
+                            activeMode === label
+                              ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] border-transparent font-semibold shadow-2xs"
+                              : "border-[#DFDAD0] dark:border-[#383532] bg-white/40 dark:bg-[#242321]/40 text-[#524E48] dark:text-[#A8A49D] hover:bg-white dark:hover:bg-[#2B2927]"
                           }`}
                         >
-                          <div className="flex items-center gap-2 truncate">
-                            <span className="font-mono font-bold text-[11px]">{skill.mentionKey}</span>
-                            <span className="truncate text-[11px] opacity-85">{skill.name}</span>
-                          </div>
-                          <span className="text-[10px] opacity-70 ml-2 uppercase font-semibold shrink-0">
-                            {skill.badge}
-                          </span>
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{label}</span>
                         </button>
                       ))}
                     </div>
-                  </div>
-                )}
 
-                {/* Drag & Drop Overlay inside Prompt Box (Matching Image 2) */}
-                {isDragging && (
-                  <div className="absolute inset-0 z-50 bg-[#ECE8DF]/95 dark:bg-[#282624]/95 backdrop-blur-xs rounded-2xl border-2 border-dashed border-neutral-400 dark:border-neutral-600 flex flex-col items-center justify-center text-center p-6 space-y-2 animate-in fade-in duration-150">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] text-neutral-700 dark:text-neutral-200">
-                        <FileText className="w-5 h-5" />
+                    {/* COMMONLY SEARCHED & RELEVANT PROMPTS */}
+                    <div className="w-full pt-3 space-y-3">
+                      <div className="flex items-center justify-between text-xs text-[#8C877D] dark:text-[#6E6A63] font-medium">
+                        <span>{currentModeData.title}</span>
+                        <span className="text-[11px] opacity-70">{currentModeData.subtitle}</span>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] text-neutral-700 dark:text-neutral-200">
-                        <ImageIcon className="w-5 h-5" />
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] text-neutral-700 dark:text-neutral-200">
-                        <FileCode className="w-5 h-5" />
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        {currentModeData.prompts.map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            onClick={() => {
+                              setPrompt(suggestion);
+                              textareaRef.current?.focus();
+                            }}
+                            className="text-left p-3.5 rounded-xl border border-[#DFDAD0] dark:border-[#383532] bg-[#FBF9F4] dark:bg-[#1C1B19] hover:bg-white dark:hover:bg-[#252321] text-xs text-[#4A4640] dark:text-[#C5C2BA] hover:text-black dark:hover:text-white transition-all shadow-xs leading-relaxed cursor-pointer"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
                       </div>
                     </div>
-                    <div className="space-y-0.5">
-                      <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
-                        Drag & drop files to upload
-                      </h3>
-                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                        or <span className="underline cursor-pointer" onClick={() => fileInputRef.current?.click()}>browse file</span> on your computer
-                      </p>
-                    </div>
                   </div>
-                )}
+                ) : (
+                  /* IN-CONVERSATION STREAM: Wide response area */
+                  <div className="w-full max-w-4xl xl:max-w-[1080px] space-y-5 pb-6">
+                    {messages.map((msg) => {
+                      const isMediaOnly =
+                        msg.role === "assistant" &&
+                        !msg.generatedProblem &&
+                        !msg.problemDetails &&
+                        (msg.content.trim().startsWith("![") || msg.content.trim().startsWith("@[video]")) &&
+                        !msg.content.trim().includes("\n\n");
 
-                {/* Uploaded Document Chips (Matching Image 1) */}
-                {uploadedDocs.length > 0 && (
-                  <div className="flex items-center gap-1.5 flex-wrap pb-2 mb-2 border-b border-black/[0.04] dark:border-white/[0.04]">
-                    {uploadedDocs.map((doc) => {
-                      const Icon = getFileIcon(doc.name);
                       return (
                         <div
-                          key={doc.id}
-                          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 dark:bg-[#1e1d1b] border border-black/[0.08] dark:border-white/[0.08] text-xs font-medium text-neutral-800 dark:text-neutral-200 shadow-2xs animate-in fade-in"
+                          key={msg.id}
+                          className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
                         >
-                          {doc.isUploading ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-500" />
-                          ) : (
-                            <Icon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-400" />
-                          )}
-                          <span className="truncate max-w-[140px]">{doc.name}</span>
-                          <button
-                            onClick={() => handleRemoveDoc(doc.id)}
-                            className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-neutral-400 hover:text-neutral-700 dark:hover:text-white transition-colors cursor-pointer"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Active Mode Badges (Image Mode & Online Web Search) */}
-                {(isImageMode || isOnlineEnabled) && (
-                  <div className="flex items-center gap-1.5 flex-wrap pb-2 mb-1.5">
-                    {isImageMode && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-[#EFECE6] dark:bg-[#2A2825] text-[#1C1B19] dark:text-[#EDEDEB] border border-[#DFDAD0] dark:border-[#383532] shadow-2xs animate-in fade-in">
-                        <ImageIcon className="w-3.5 h-3.5 text-[#524E48] dark:text-[#A8A49D]" />
-                        <span>Image Mode</span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-600 dark:bg-amber-400" />
-                        <button
-                          type="button"
-                          onClick={() => setIsImageMode(false)}
-                          className="hover:text-black dark:hover:text-white ml-0.5 transition-colors cursor-pointer text-[#8C877D]"
-                          title="Disable Image Mode"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    )}
-                    {isOnlineEnabled && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-[#EFECE6] dark:bg-[#2A2825] text-[#1C1B19] dark:text-[#EDEDEB] border border-[#DFDAD0] dark:border-[#383532] shadow-2xs animate-in fade-in">
-                        <Globe className="w-3.5 h-3.5 text-[#524E48] dark:text-[#A8A49D]" />
-                        <span>Web Search Active</span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
-                        <button
-                          type="button"
-                          onClick={() => setIsOnlineEnabled(false)}
-                          className="hover:text-black dark:hover:text-white ml-0.5 transition-colors cursor-pointer text-[#8C877D]"
-                          title="Disable Web Search"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Text Input */}
-                <textarea
-                  ref={textareaRef}
-                  value={prompt}
-                  onChange={handlePromptChange}
-                  onKeyDown={handlePromptKeyDown}
-                  placeholder={
-                    isImageMode
-                      ? "Describe the visual flowchart, system architecture, or diagram to generate..."
-                      : currentModeData.placeholder
-                  }
-                  className="w-full bg-transparent resize-none outline-hidden text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#736F68] text-sm md:text-base min-h-[58px] leading-relaxed"
-                  rows={2}
-                />
-
-                {/* Bottom Toolbar (Matching Image 1) */}
-                <div className="pt-2.5 border-t border-black/[0.04] dark:border-white/[0.04] flex items-center justify-between gap-2 flex-wrap">
-                  
-                  {/* Left Controls */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    
-                    {/* Plus (+) Button for Uploading & AI Skills Trigger */}
-                    <div className="relative" ref={plusMenuRef}>
-                      <button
-                        type="button"
-                        onClick={() => setShowPlusMenu(!showPlusMenu)}
-                        className={`w-8 h-8 rounded-xl border transition-all flex items-center justify-center cursor-pointer shadow-2xs ${
-                          showPlusMenu
-                            ? "bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] border-transparent"
-                            : "border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] text-neutral-700 dark:text-neutral-300"
-                        }`}
-                        title="Attach files, skills, and tools"
-                      >
-                        <Plus className={`w-4 h-4 transition-transform duration-200 ${showPlusMenu ? "rotate-45" : ""}`} />
-                      </button>
-
-                      {showPlusMenu && (
-                        <div
-                          className="absolute bottom-full left-0 mb-2.5 w-72 md:w-84 bg-[#FBF9F4] dark:bg-[#1E1D1B] border border-[#DFDAD0] dark:border-[#383532] rounded-2xl shadow-xl dark:shadow-2xl p-1.5 z-50 animate-in fade-in slide-in-from-bottom-2 text-xs"
-                        >
-                          {/* 1. Add photos & files */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowPlusMenu(false);
-                              fileInputRef.current?.click();
-                            }}
-                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
-                          >
-                            <Paperclip className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
-                            <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                              <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">Add photos & files</span>
-                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Upload from computer</span>
-                            </div>
-                          </button>
-
-                          {/* 2. Add from library */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowPlusMenu(false);
-                              if (userHistory.length > 0) {
-                                toast.info(`Viewing recent library (${userHistory.length} saved sessions)`);
-                              } else {
-                                toast.info("No saved library items yet. Your generated problems and files will appear here.");
-                              }
-                            }}
-                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
-                          >
-                            <FolderOpen className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
-                            <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                              <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">Add from library</span>
-                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Browse and search your files</span>
-                            </div>
-                          </button>
-
-                          {/* 3. Create image */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowPlusMenu(false);
-                              const next = !isImageMode;
-                              setIsImageMode(next);
-                              if (next) {
-                                toast.success("Image Generation Mode enabled: Describe any visual, diagram, or artwork.");
-                              } else {
-                                toast.info("Image Generation Mode disabled");
-                              }
-                              textareaRef.current?.focus();
-                            }}
-                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
-                          >
-                            <ImageIcon className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
-                            <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                              <span className="font-medium text-[#1C1B19] dark:text-white text-[13px] flex items-center gap-1.5">
-                                <span>Create image</span>
-                                {isImageMode && <span className="w-1.5 h-1.5 rounded-full bg-amber-600 dark:bg-amber-400" />}
-                              </span>
-                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">FLUX.1 / DALL-E</span>
-                            </div>
-                          </button>
-
-                          {/* 4. Generate video */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowPlusMenu(false);
-                              setPrompt("/video ");
-                              textareaRef.current?.focus();
-                              toast.info("Video Generation: Type what video or motion you want to render.");
-                            }}
-                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
-                          >
-                            <Film className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
-                            <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                              <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">
-                                <span>Generate video</span>
-                              </span>
-                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Motion AI / Wan 2.1</span>
-                            </div>
-                          </button>
-
-                          {/* 5. Build flowchart & diagrams */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowPlusMenu(false);
-                              setPrompt("/flowchart ");
-                              textareaRef.current?.focus();
-                              toast.info("Flowchart Studio: Describe the system architecture, logic loop, or algorithm flow.");
-                            }}
-                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
-                          >
-                            <Network className="w-4 h-4 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white shrink-0" />
-                            <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                              <span className="font-medium text-[#1C1B19] dark:text-white text-[13px]">
-                                <span>Build flowchart</span>
-                              </span>
-                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Mermaid Architecture</span>
-                            </div>
-                          </button>
-
-                          {/* 4. Web search */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowPlusMenu(false);
-                              const next = !isOnlineEnabled;
-                              setIsOnlineEnabled(next);
-                              if (next) {
-                                toast.success("Web search enabled: Real-time info");
-                              } else {
-                                toast.info("Web search disabled");
-                              }
-                            }}
-                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] flex items-center gap-3 transition-colors cursor-pointer group"
-                          >
-                            <Globe className="w-4 h-4 shrink-0 text-[#524E48] dark:text-neutral-300 group-hover:text-black dark:group-hover:text-white transition-colors" />
-                            <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                              <span className="font-medium text-[#1C1B19] dark:text-white text-[13px] flex items-center gap-1.5">
-                                <span>Web search</span>
-                                {isOnlineEnabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />}
-                              </span>
-                              <span className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">Find real-time news and info</span>
-                            </div>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Mode Pill (e.g. Set limit / Mode) */}
-                    <div className="relative" ref={topicDropdownRef}>
-                      <button
-                        onClick={() => setShowTopicDropdown(!showTopicDropdown)}
-                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] text-[#4A4640] dark:text-[#C5C2BA] shadow-2xs transition-colors"
-                      >
-                        <Layers className="w-3.5 h-3.5 opacity-60" />
-                        <span>{selectedTopic || activeMode}</span>
-                        <ChevronDown className="w-3 h-3 opacity-60" />
-                      </button>
-
-                      {showTopicDropdown && (
-                        <div className={`absolute ${messages.length === 0 ? "top-full mt-2" : "bottom-full mb-2"} left-0 w-52 max-h-56 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-xl py-1 z-50 text-xs`}>
-                          <button
-                            onClick={() => {
-                              setSelectedTopic("");
-                              setShowTopicDropdown(false);
-                            }}
-                            className={`w-full text-left px-3 py-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors flex items-center justify-between ${
-                              !selectedTopic ? "text-neutral-950 dark:text-white font-semibold bg-black/[0.03] dark:bg-white/[0.05]" : "text-[#524E48] dark:text-[#A8A49D]"
+                          <div
+                            className={`text-sm leading-relaxed ${
+                              isMediaOnly
+                                ? "p-0 bg-transparent border-none shadow-none"
+                                : msg.role === "user"
+                                ? "w-fit max-w-[70%] sm:max-w-md px-4 py-2 rounded-2xl bg-[#1C1B19] text-white dark:bg-[#2A2826] dark:text-[#EDEDEB] shadow-2xs select-text"
+                                : "w-full py-2 text-[#1C1B19] dark:text-[#EDEDEB]"
                             }`}
                           >
-                            <span>Any / None (Default)</span>
-                            {!selectedTopic && <Check className="w-3 h-3" />}
-                          </button>
-                          <div className="my-1 border-t border-black/[0.04] dark:border-white/[0.04]" />
-                          {topicsList.map((t) => (
-                            <button
-                              key={t}
-                              onClick={() => {
-                                setSelectedTopic(t);
-                                setShowTopicDropdown(false);
-                              }}
-                              className={`w-full text-left px-3 py-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors flex items-center justify-between ${
-                                selectedTopic === t ? "text-neutral-950 dark:text-white font-semibold bg-black/[0.03] dark:bg-white/[0.05]" : "text-[#524E48] dark:text-[#A8A49D]"
-                              }`}
-                            >
-                              <span>{t}</span>
-                              {selectedTopic === t && <Check className="w-3 h-3" />}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Model Selection Pill (Matching Image 1 styling with official company logo) */}
-                    <div className="relative" ref={chatModelDropdownRef}>
-                      <button
-                        onClick={() => setShowChatModelDropdown(!showChatModelDropdown)}
-                        className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs transition-colors font-medium cursor-pointer"
-                      >
-                        <ProviderLogo provider={activeModelObj?.provider} modelId={activeModel} className="w-3.5 h-3.5 text-current shrink-0" />
-                        <span>
-                          {activeModelObj ? activeModelObj.name : "Select Model"}
-                        </span>
-                        <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
-                      </button>
-
-                      {showChatModelDropdown && (
-                        <div className={`absolute ${messages.length === 0 ? "top-full mt-2" : "bottom-full mb-2"} left-0 w-72 max-h-60 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-2xl py-1 z-50 text-xs font-mono`}>
-                          {availableModelsList.length === 0 ? (
-                            <div className="p-4 text-center space-y-2.5 font-sans">
-                              <AlertCircle className="w-5 h-5 mx-auto text-amber-500 opacity-80" />
-                              <div className="space-y-1">
-                                <p className="font-semibold text-neutral-900 dark:text-white text-xs">
-                                  No Active Models
-                                </p>
-                                <p className="text-[11px] text-neutral-500 leading-relaxed">
-                                  Add an API key in Settings to activate your models.
-                                </p>
-                              </div>
-                              <button
-                                onClick={() => {
-                                  setShowChatModelDropdown(false);
-                                  setActiveView("settings");
+                          {msg.generatedProblem ? (
+                            <div className="w-full">
+                              <GammaProblemCanvas
+                                problem={msg.generatedProblem}
+                                onSolveInEditor={() => {
+                                  window.location.href = "/problem/c0000000-0000-0000-0000-000000000001";
                                 }}
-                                className="w-full py-1.5 px-3 rounded-lg bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] text-xs font-semibold hover:opacity-90 transition-opacity"
-                              >
-                                Configure API Keys in Settings →
-                              </button>
+                              />
                             </div>
+                          ) : msg.problemDetails ? (
+                            <div className="mb-4 pb-4 border-b border-black/[0.08] dark:border-white/[0.08]">
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full border border-neutral-300 dark:border-neutral-700 bg-neutral-100/60 dark:bg-neutral-800/60 text-neutral-800 dark:text-neutral-200">
+                                    {msg.problemDetails.level}
+                                  </span>
+                                  <h3 className="font-semibold text-lg text-neutral-900 dark:text-neutral-100">
+                                    {msg.problemDetails.title}
+                                  </h3>
+                                </div>
+
+                                <Link
+                                  href="/problem/c0000000-0000-0000-0000-000000000001"
+                                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100 shadow-xs transition-colors shrink-0"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                  <span>Solve in Editor</span>
+                                </Link>
+                              </div>
+
+                              {msg.problemDetails.examples && (
+                                <div className="mt-3 p-3 rounded-xl bg-black/[0.03] dark:bg-white/[0.03] text-xs font-mono space-y-1">
+                                  <div className="font-semibold text-neutral-800 dark:text-neutral-200">Examples:</div>
+                                  <pre className="whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
+                                    {typeof msg.problemDetails.examples === 'string' ? msg.problemDetails.examples : JSON.stringify(msg.problemDetails.examples, null, 2)}
+                                  </pre>
+                                </div>
+                              )}
+
+                              {msg.problemDetails.constraints && (
+                                <div className="mt-2 p-3 rounded-xl bg-black/[0.03] dark:bg-white/[0.03] text-xs font-mono space-y-1">
+                                  <div className="font-semibold text-neutral-800 dark:text-neutral-200">Constraints:</div>
+                                  <pre className="whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
+                                    {Array.isArray(msg.problemDetails.constraints) ? msg.problemDetails.constraints.join('\n') : msg.problemDetails.constraints}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          ) : msg.role === "user" ? (
+                            <p className="whitespace-pre-wrap font-sans text-xs sm:text-sm text-white dark:text-[#EDEDEB] leading-relaxed select-text">
+                              {msg.content}
+                            </p>
                           ) : (
-                            <>
-                              <div className="p-2 border-b border-black/[0.04] dark:border-white/[0.04]">
-                                <input
-                                  type="search"
-                                  name="in-chat-model-search-filter"
-                                  autoComplete="off"
-                                  autoCorrect="off"
-                                  autoCapitalize="off"
-                                  spellCheck={false}
-                                  data-form-type="other"
-                                  data-1p-ignore="true"
-                                  data-lpignore="true"
-                                  data-bwignore="true"
-                                  value={modelDropdownSearch}
-                                  onChange={(e) => setModelDropdownSearch(e.target.value)}
-                                  placeholder="Search available models..."
-                                  className="w-full px-2.5 py-1 text-xs rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-neutral-200 dark:border-neutral-700 outline-hidden font-sans"
-                                  autoFocus
-                                />
-                              </div>
+                            /* Assistant message with live streaming token cursor support */
+                            <div className="relative">
+                              {msg.content ? (
+                                <>
+                                  {renderFormattedMessage(msg.content)}
+                                  {isLoading && msg.id === streamingMessageId && (
+                                    <span className="inline-block w-2 h-4 ml-1 rounded-xs bg-[#1C1B19] dark:bg-white animate-pulse align-middle" />
+                                  )}
+                                </>
+                              ) : (
+                                <div className="flex items-center text-xs font-mono select-none py-1">
+                                  <span className="shimmer font-medium">{currentVerb}</span>
+                                  <span className="text-neutral-500 font-bold tracking-widest ml-0.5 inline-block min-w-[20px] text-left">
+                                    {DOT_SEQUENCE[dotIndex]}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
 
-                              <div className="py-1">
-                                {filteredDropdownModels.map((m) => (
-                                  <button
-                                    key={m.id}
-                                    onClick={() => handleSelectModel(m)}
-                                    className={`w-full text-left px-3 py-2 transition-colors flex items-center justify-between ${
-                                      activeModel === m.id
-                                        ? "bg-black/[0.05] dark:bg-white/[0.08] text-neutral-950 dark:text-white font-semibold"
-                                        : "text-[#524E48] dark:text-[#A8A49D] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <ProviderLogo provider={m.provider} modelId={m.id} className="w-3.5 h-3.5 shrink-0 text-current" />
-                                      <div className="flex flex-col">
-                                        <span className="truncate">{m.name}</span>
-                                        <span className="text-[10px] font-sans opacity-60">{m.provider} • {m.badge}</span>
-                                      </div>
-                                    </div>
-                                    {activeModel === m.id && <Check className="w-3.5 h-3.5" />}
-                                  </button>
-                                ))}
-                              </div>
-
-                              <div className="pt-1 mt-1 border-t border-black/[0.04] dark:border-white/[0.04] px-2 pb-1">
+                          {msg.role === "assistant" && !msg.generatedProblem && (
+                            <div className="mt-3 pt-2 border-t border-black/[0.04] dark:border-white/[0.04] flex items-center justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                              {/* Solve in Problem Editor button if problem content detected */}
+                              {msg.content && (msg.content.includes("# Problem") || msg.content.includes("Problem Description") || msg.content.includes("Difficulty:")) ? (
                                 <button
                                   onClick={() => {
-                                    setShowChatModelDropdown(false);
-                                    setActiveView("settings");
+                                    try {
+                                      sessionStorage.setItem("easycode_live_generate_prompt", msg.content);
+                                    } catch (e) {}
+                                    window.location.href = `/problem/new?generate=true&prompt=${encodeURIComponent(msg.content.substring(0, 150))}`;
                                   }}
-                                  className="w-full text-center py-1.5 text-[11px] font-sans font-medium text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg transition-colors"
+                                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] hover:opacity-90 transition-opacity font-medium text-[11px] cursor-pointer shadow-2xs"
                                 >
-                                  Add More Keys in Settings →
+                                  <Zap className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                  <span>Solve in Problem Editor ↗</span>
                                 </button>
+                              ) : <div />}
+
+                              <div className="flex items-center gap-2">
+                                {/* Copy Text */}
+                                {msg.content && (
+                                  <button
+                                    onClick={() => copyText(msg.content, msg.id)}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer text-[11px]"
+                                    title="Copy response"
+                                  >
+                                    {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                    <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
+                                  </button>
+                                )}
+
+                                {/* Delete Conversation at End of Conversation */}
+                                {currentSessionId && (
+                                  <button
+                                    onClick={() => handleDeleteConversation(currentSessionId)}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-neutral-400 hover:text-[#1C1B19] dark:hover:text-[#EDEDEB] transition-colors cursor-pointer text-[11px]"
+                                    title="Delete this conversation"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>Delete</span>
+                                  </button>
+                                )}
                               </div>
-                            </>
+                            </div>
+                          )}
+
+                          {!msg.generatedProblem && msg.codeSnippet && (
+                            <div className="mt-4 rounded-xl bg-[#181716] p-3.5 border border-white/[0.08] text-xs font-mono text-neutral-200">
+                              <div className="flex items-center justify-between pb-2 border-b border-white/[0.06] text-[11px] text-neutral-400 uppercase font-semibold">
+                                <span>Starter Solution ({msg.codeSnippet.language})</span>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={() => {
+                                      const ext = getLanguageExtension(msg.codeSnippet?.language);
+                                      downloadFile(`solution.${ext}`, msg.codeSnippet?.code || "");
+                                    }}
+                                    className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
+                                    title="Download code file"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    <span>Download</span>
+                                  </button>
+                                  <button
+                                    onClick={() => copyText(msg.codeSnippet?.code || "", msg.id)}
+                                    className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
+                                  >
+                                    {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                    <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
+                                  </button>
+                                </div>
+                              </div>
+                              <pre className="mt-2 overflow-x-auto p-1 leading-relaxed text-neutral-300">
+                                {msg.codeSnippet.code}
+                              </pre>
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
-
-                    {/* Visual & Media Engine Selection Pill */}
-                    <div className="relative shrink-0" ref={visualEngineDropdownRef}>
-                      <button
-                        onClick={() => setShowVisualEngineDropdown(!showVisualEngineDropdown)}
-                        className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] hover:bg-white dark:hover:bg-white/[0.08] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs transition-colors font-medium cursor-pointer"
-                        title="Select Image & Video Generation Engine"
-                      >
-                        <ProviderLogo provider={activeVisualEngineObj.provider} modelId={activeVisualEngineObj.id} className="w-3.5 h-3.5 text-current shrink-0" />
-                        <span className="truncate max-w-[130px]">
-                          {activeVisualEngineObj.name}
-                        </span>
-                        <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
-                      </button>
-
-                      {showVisualEngineDropdown && (
-                        <div className={`absolute ${messages.length === 0 ? "top-full mt-2" : "bottom-full mb-2"} left-0 w-76 max-h-72 overflow-y-auto bg-white dark:bg-[#252321] border border-[#E8E4DB] dark:border-[#383531] rounded-xl shadow-2xl py-1 z-50 text-xs font-mono`}>
-                          <div className="p-2 border-b border-black/[0.04] dark:border-white/[0.04]">
-                            <input
-                              type="search"
-                              name="in-chat-visual-engine-search"
-                              autoComplete="off"
-                              autoCorrect="off"
-                              autoCapitalize="off"
-                              spellCheck={false}
-                              data-form-type="other"
-                              data-1p-ignore="true"
-                              data-lpignore="true"
-                              data-bwignore="true"
-                              value={visualEngineSearch}
-                              onChange={(e) => setVisualEngineSearch(e.target.value)}
-                              placeholder="Search media engines..."
-                              className="w-full px-2.5 py-1 text-xs rounded-md bg-black/[0.03] dark:bg-white/[0.04] border border-neutral-200 dark:border-neutral-700 outline-hidden font-sans"
-                              autoFocus
-                            />
-                          </div>
-
-                          <div className="py-1">
-                            {filteredVisualEngines.map((eng) => (
-                              <button
-                                key={eng.id}
-                                onClick={() => {
-                                  setActiveVisualEngine(eng.id);
-                                  try {
-                                    localStorage.setItem("easycode_visual_engine", eng.id);
-                                  } catch (e) {}
-                                  setShowVisualEngineDropdown(false);
-                                  toast.success(`Selected ${eng.name} for image/video generation`);
-                                }}
-                                className={`w-full text-left px-3 py-2 transition-colors flex items-center justify-between ${
-                                  activeVisualEngine === eng.id
-                                    ? "bg-black/[0.05] dark:bg-white/[0.08] text-neutral-950 dark:text-white font-semibold"
-                                    : "text-[#524E48] dark:text-[#A8A49D] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
-                                }`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <ProviderLogo provider={eng.provider} modelId={eng.id} className="w-3.5 h-3.5 shrink-0 text-current" />
-                                  <div className="flex flex-col">
-                                    <span className="truncate">{eng.name}</span>
-                                    <span className="text-[10px] font-sans opacity-60">{eng.provider} • {eng.badge}</span>
-                                  </div>
-                                </div>
-                                {activeVisualEngine === eng.id && <Check className="w-3.5 h-3.5" />}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                      </div>
+                    );
+                  })}
+                    <div ref={messagesEndRef} />
                   </div>
+                )}
 
-                  {/* Right Action Icons: Mic & Send Button */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => toast.info("Voice input ready")}
-                      className="p-1.5 rounded-lg text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white transition-colors cursor-pointer"
-                      title="Voice input"
-                    >
-                      <Mic className="w-4 h-4" />
-                    </button>
-
-                    {/* Theme-aligned Send / Stop Button */}
-                    {isLoading ? (
-                      <button
-                        onClick={handleCancelGeneration}
-                        className="w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-xs bg-red-600 hover:bg-red-700 text-white"
-                        title="Stop generating"
-                      >
-                        <Square className="w-3.5 h-3.5 fill-current" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleSend()}
-                        disabled={!prompt.trim() && uploadedDocs.length === 0}
-                        className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-xs ${
-                          prompt.trim() || uploadedDocs.length > 0
-                            ? "bg-[#1C1B19] text-white hover:bg-black dark:bg-white dark:text-[#1C1B19] dark:hover:bg-neutral-100 shadow-neutral-900/10"
-                            : "bg-black/[0.06] dark:bg-white/[0.06] text-[#9E9A91] dark:text-[#615E57] cursor-not-allowed"
-                        }`}
-                        title="Send message"
-                      >
-                        <ArrowUp className="w-4 h-4 stroke-[2.5]" />
-                      </button>
-                    )}
-                  </div>
-                </div>
               </div>
 
-              {/* QUICK MODE SELECTION PILLS */}
-              {messages.length === 0 && (
-                <div className="flex items-center justify-center gap-2 flex-wrap w-full">
-                  {platformModes.map(({ label, icon: Icon }) => (
-                    <button
-                      key={label}
-                      onClick={() => setActiveMode(label)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all flex items-center gap-1.5 ${
-                        activeMode === label
-                          ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] border-transparent font-semibold shadow-2xs"
-                          : "border-[#DFDAD0] dark:border-[#383532] bg-white/40 dark:bg-[#242321]/40 text-[#524E48] dark:text-[#A8A49D] hover:bg-white dark:hover:bg-[#2B2927]"
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      <span>{label}</span>
-                    </button>
-                  ))}
+              {/* Floating Scroll-to-Bottom Pill Button */}
+              {showScrollBottom && (
+                <div className="absolute bottom-28 inset-x-0 flex justify-center pointer-events-none z-35">
+                  <button
+                    onClick={scrollToBottom}
+                    className="pointer-events-auto px-3.5 py-1.5 rounded-full bg-[#1C1B19] text-white dark:bg-[#EDEDEB] dark:text-[#1C1B19] text-xs font-medium shadow-lg hover:opacity-90 transition-all flex items-center gap-1.5 cursor-pointer animate-in fade-in slide-in-from-bottom-2"
+                  >
+                    <ArrowDown className="w-3.5 h-3.5" />
+                    <span>Scroll to bottom</span>
+                  </button>
                 </div>
               )}
 
-              {/* COMMONLY SEARCHED & RELEVANT PROMPTS */}
-              {messages.length === 0 && (
-                <div className="w-full pt-3 space-y-3">
-                  <div className="flex items-center justify-between text-xs text-[#8C877D] dark:text-[#6E6A63] font-medium">
-                    <span>{currentModeData.title}</span>
-                    <span className="text-[11px] opacity-70">{currentModeData.subtitle}</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                    {currentModeData.prompts.map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        onClick={() => {
-                          setPrompt(suggestion);
-                          textareaRef.current?.focus();
-                        }}
-                        className="text-left p-3.5 rounded-xl border border-[#DFDAD0] dark:border-[#383532] bg-[#FBF9F4] dark:bg-[#1C1B19] hover:bg-white dark:hover:bg-[#252321] text-xs text-[#4A4640] dark:text-[#C5C2BA] hover:text-black dark:hover:text-white transition-all shadow-xs leading-relaxed cursor-pointer"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
+              {/* DOCKED FLOATING PROMPT BOX AT BOTTOM (ChatGPT style) - Stays fixed floating above responses */}
+              {messages.length > 0 && (
+                <div className="absolute bottom-0 inset-x-0 flex flex-col items-center px-4 pb-4 pt-6 bg-gradient-to-t from-[#FBF9F4] via-[#FBF9F4]/90 to-transparent dark:from-[#1C1B19] dark:via-[#1C1B19]/90 dark:to-transparent z-30 pointer-events-none">
+                  <div className="w-full max-w-2xl pointer-events-auto">
+                    {renderPromptBox()}
                   </div>
                 </div>
               )}
 
             </div>
           )}
-
         </main>
       </div>
+
+      {/* Floating Ask AI / Quote Selection Tooltip */}
+      {selectionTooltip.visible && (
+        <div
+          style={{
+            position: "fixed",
+            left: `${selectionTooltip.x}px`,
+            top: `${selectionTooltip.y}px`,
+            transform: "translateX(-50%)",
+          }}
+          className="z-50 flex items-center gap-1 p-1 rounded-xl bg-[#1C1B19]/95 dark:bg-[#2A2826]/95 backdrop-blur-md text-white border border-white/10 shadow-xl select-none animate-in fade-in zoom-in-95 duration-150"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <button
+            onClick={() => handleQuoteSelection(selectionTooltip.text)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium hover:bg-white/15 transition-colors cursor-pointer text-white"
+            title="Quote and ask AI about this selection"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+            <span>Ask AI</span>
+          </button>
+          <span className="text-white/20">|</span>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(selectionTooltip.text);
+              toast.success("Selection copied to clipboard");
+              setSelectionTooltip({ visible: false, text: "", x: 0, y: 0 });
+            }}
+            className="p-1 rounded-lg hover:bg-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+            title="Copy selection"
+          >
+            <Copy className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
     </div>
   );

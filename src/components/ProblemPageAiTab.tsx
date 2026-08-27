@@ -36,6 +36,7 @@ import {
   EyeOff,
   Film,
   Network,
+  Mic,
 } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
@@ -44,6 +45,9 @@ import Link from "next/link";
 import { ProviderLogo } from "@/components/common/ProviderLogos";
 import { computeLineDiff, DiffResult } from "@/utils/diffHelper";
 import { ALL_VISUAL_ENGINES, VisualEngineItem } from "@/utils/mediaGenerator";
+import { cleanModelName } from "@/utils/cleanModelName";
+import { getAllModelsForProvider, getEnabledModelIds } from "@/utils/customModelRegistry";
+import AudioRecordingVisualizer from "@/components/common/AudioRecordingVisualizer";
 import AiMediaCard from "@/components/common/AiMediaCard";
 import MermaidFlowchartViewer from "@/components/common/MermaidFlowchartViewer";
 
@@ -111,10 +115,10 @@ const ALL_POSSIBLE_MODELS: ModelItem[] = [
   // 5. Groq
   { id: "groq/compound", name: "Groq Compound (MoE)", provider: "Groq", badge: "Ultra Fast", requiredKey: "groq", category: "Speed" },
   { id: "groq/compound-mini", name: "Groq Compound Mini", provider: "Groq", badge: "Instant", requiredKey: "groq", category: "Speed" },
-  { id: "qwen/qwen3.6-27b", name: "Qwen 3.6 27B (Groq)", provider: "Groq", badge: "Deep CoT", requiredKey: "groq", category: "Reasoning" },
-  { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B (Groq)", provider: "Groq", badge: "Flagship", requiredKey: "groq", category: "Frontier" },
-  { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B (Groq)", provider: "Groq", badge: "Fast", requiredKey: "groq", category: "Speed" },
-  { id: "allam-2-7b", name: "Allam 2 7B (Groq)", provider: "Groq", badge: "Multilingual", requiredKey: "groq", category: "Speed" },
+  { id: "qwen/qwen3.6-27b", name: "Qwen 3.6 27B", provider: "Groq", badge: "Deep CoT", requiredKey: "groq", category: "Reasoning" },
+  { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B", provider: "Groq", badge: "Flagship", requiredKey: "groq", category: "Frontier" },
+  { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B", provider: "Groq", badge: "Fast", requiredKey: "groq", category: "Speed" },
+  { id: "allam-2-7b", name: "Allam 2 7B", provider: "Groq", badge: "Multilingual", requiredKey: "groq", category: "Speed" },
 
   // 6. Moonshot AI (Kimi)
   { id: "kimi-latest", name: "Kimi Latest", provider: "Moonshot AI", badge: "128k Context", requiredKey: "kimi", category: "Reasoning" },
@@ -133,8 +137,8 @@ const ALL_POSSIBLE_MODELS: ModelItem[] = [
   { id: "grok-2-mini", name: "Grok 2 mini", provider: "xAI", badge: "Fast", requiredKey: "grok", category: "Speed" },
 
   // 10. Cerebras & SambaNova
-  { id: "cerebras-llama-3.3-70b", name: "Llama 3.3 70B (Cerebras)", provider: "Cerebras", badge: "Fast", requiredKey: "cerebras", category: "Speed" },
-  { id: "sambanova-deepseek-r1", name: "DeepSeek R1 (SambaNova)", provider: "SambaNova", badge: "Fast CoT", requiredKey: "sambanova", category: "Speed" },
+  { id: "cerebras-llama-3.3-70b", name: "Llama 3.3 70B", provider: "Cerebras", badge: "Fast", requiredKey: "cerebras", category: "Speed" },
+  { id: "sambanova-deepseek-r1", name: "DeepSeek R1", provider: "SambaNova", badge: "Fast CoT", requiredKey: "sambanova", category: "Speed" },
 
   // 11. Perplexity & Cohere
   { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro", provider: "Perplexity", badge: "Live Search", requiredKey: "perplexity", category: "Search" },
@@ -229,6 +233,7 @@ export default function ProblemPageAiTab({
   const [chats, setChats] = useState<ChatMessage[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState<string>("");
+  const [isRecordingAudio, setIsRecordingAudio] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [appliedCodeId, setAppliedCodeId] = useState<string | null>(null);
 
@@ -385,10 +390,48 @@ export default function ProblemPageAiTab({
     return true;
   };
 
+  const [modelsVersion, setModelsVersion] = useState(0);
+
+  useEffect(() => {
+    const handleUpdate = () => setModelsVersion((v) => v + 1);
+    window.addEventListener("easycode_models_updated", handleUpdate);
+    return () => window.removeEventListener("easycode_models_updated", handleUpdate);
+  }, []);
+
   // Filter ONLY available models with valid saved keys that haven't hit rate limits
   const availableModels = useMemo(() => {
-    return ALL_POSSIBLE_MODELS.filter((m) => isModelValidAndAvailable(m));
-  }, [apiKeys, serverHostedKeys, rateLimitedModels, verifiedModelsByProvider]);
+    const standardModels = ALL_POSSIBLE_MODELS.filter(
+      (m) => m.requiredKey !== "cloudflare" && m.requiredKey !== "huggingface"
+    ).filter((m) => isModelValidAndAvailable(m));
+
+    const cfEnabledIds = getEnabledModelIds("cloudflare");
+    const cfModels = getAllModelsForProvider("cloudflare")
+      .filter((m) => cfEnabledIds.includes(m.id))
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        provider: "Cloudflare",
+        category: m.category,
+        badge: m.badge,
+        requiredKey: "cloudflare",
+      }))
+      .filter((m) => isModelValidAndAvailable(m));
+
+    const hfEnabledIds = getEnabledModelIds("huggingface");
+    const hfModels = getAllModelsForProvider("huggingface")
+      .filter((m) => hfEnabledIds.includes(m.id))
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        provider: "Hugging Face",
+        category: m.category,
+        badge: m.badge,
+        requiredKey: "huggingface",
+      }))
+      .filter((m) => isModelValidAndAvailable(m));
+
+    return [...standardModels, ...cfModels, ...hfModels];
+  }, [apiKeys, serverHostedKeys, rateLimitedModels, verifiedModelsByProvider, modelsVersion]);
 
   // Close model dropdowns on outside click
   useEffect(() => {
@@ -556,6 +599,7 @@ export default function ProblemPageAiTab({
       sourceCode: sourceCode || "",
       problemInfo: problemInfo || null,
       model: selectedModel,
+      visualEngine: selectedVisualEngine,
       customKeys: apiKeys,
     };
 
@@ -1251,7 +1295,7 @@ export default function ProblemPageAiTab({
               className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white dark:bg-[#201f1d] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.1] text-xs font-medium text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer shadow-2xs"
             >
               <ProviderLogo provider={currentModelMeta.provider} modelId={selectedModel} className="w-3.5 h-3.5 text-neutral-700 dark:text-neutral-300" />
-              <span className="truncate max-w-[140px]">{currentModelMeta.name}</span>
+              <span className="truncate max-w-[140px]">{cleanModelName(currentModelMeta.name)}</span>
               <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
             </button>
 
@@ -1309,7 +1353,7 @@ export default function ProblemPageAiTab({
                         onClick={() => {
                           setSelectedModel(m.id);
                           setShowModelDropdown(false);
-                          toast.success(`Switched model to ${m.name}`);
+                          toast.success(`Switched model to ${cleanModelName(m.name)}`);
                         }}
                         className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
                           isSelected
@@ -1319,7 +1363,7 @@ export default function ProblemPageAiTab({
                       >
                         <div className="flex items-center gap-2 truncate">
                           <ProviderLogo provider={m.provider} modelId={m.id} className="w-3.5 h-3.5 shrink-0 text-current" />
-                          <span className="truncate">{m.name}</span>
+                          <span className="truncate">{cleanModelName(m.name)}</span>
                         </div>
                         <span
                           className={`text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ml-1.5 ${
@@ -1367,7 +1411,7 @@ export default function ProblemPageAiTab({
               title="Select Image & Video Generation Engine"
             >
               <ProviderLogo provider={currentVisualEngineMeta.provider} modelId={selectedVisualEngine} className="w-3.5 h-3.5 text-neutral-700 dark:text-neutral-300 shrink-0" />
-              <span className="truncate max-w-[130px]">{currentVisualEngineMeta.name}</span>
+              <span className="truncate max-w-[130px]">{cleanModelName(currentVisualEngineMeta.name)}</span>
               <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
             </button>
 
@@ -1399,7 +1443,7 @@ export default function ProblemPageAiTab({
                             localStorage.setItem("easycode_visual_engine", eng.id);
                           } catch (e) {}
                           setShowVisualEngineDropdown(false);
-                          toast.success(`Selected ${eng.name}`);
+                          toast.success(`Selected ${cleanModelName(eng.name)}`);
                         }}
                         className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
                           isSelected
@@ -1410,7 +1454,7 @@ export default function ProblemPageAiTab({
                         <div className="flex items-center gap-2 truncate">
                           <ProviderLogo provider={eng.provider} modelId={eng.id} className="w-3.5 h-3.5 shrink-0 text-current" />
                           <div className="flex flex-col text-left truncate">
-                            <span className="truncate">{eng.name}</span>
+                            <span className="truncate">{cleanModelName(eng.name)}</span>
                             <span className={`text-[10px] truncate ${isSelected ? "opacity-75" : "text-neutral-400"}`}>
                               {eng.provider} • {eng.badge}
                             </span>
@@ -1549,10 +1593,9 @@ export default function ProblemPageAiTab({
                 /* Claude-Style Spinner Verbs & Cycling Dots Animation (from Claudionary) */
                 <div className="flex items-center justify-between py-2 text-neutral-500 dark:text-neutral-400 animate-in fade-in duration-200">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-500 dark:text-amber-400 animate-pulse shrink-0" />
-                    <div className="flex items-center italic text-xs font-mono font-medium text-neutral-800 dark:text-neutral-200 select-none">
-                      <span>{currentVerb}</span>
-                      <span className="text-amber-600 dark:text-amber-400 font-bold tracking-widest ml-0.5 inline-block min-w-[20px] text-left">{DOT_SEQUENCE[dotIndex]}</span>
+                    <div className="flex items-center text-xs font-mono font-medium select-none">
+                      <span className="shimmer">{currentVerb}</span>
+                      <span className="text-neutral-500 font-bold tracking-widest ml-0.5 inline-block min-w-[20px] text-left">{DOT_SEQUENCE[dotIndex]}</span>
                     </div>
                   </div>
 
@@ -1723,16 +1766,31 @@ export default function ProblemPageAiTab({
             </div>
           )}
 
-          {/* Prompt Textarea */}
-          <textarea
-            ref={textareaRef}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a question, request code feedback, or debug logic..."
-            className="w-full bg-transparent resize-none outline-hidden text-xs leading-relaxed min-h-[44px] max-h-[120px] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 font-sans"
-            rows={2}
-          />
+          {/* Prompt Textarea or Live Audio Frequency Visualizer */}
+          {isRecordingAudio ? (
+            <div className="py-1">
+              <AudioRecordingVisualizer
+                isOpen={isRecordingAudio}
+                onTranscription={(text) => {
+                  setInputValue((prev) => (prev ? `${prev} ${text}` : text));
+                  setIsRecordingAudio(false);
+                  setTimeout(() => textareaRef.current?.focus(), 50);
+                }}
+                onCancel={() => setIsRecordingAudio(false)}
+                customKeys={apiKeys}
+              />
+            </div>
+          ) : (
+            <textarea
+              ref={textareaRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask a question, request code feedback, or debug logic..."
+              className="w-full bg-transparent resize-none outline-hidden text-xs leading-relaxed min-h-[44px] max-h-[120px] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 font-sans"
+              rows={2}
+            />
+          )}
 
           {/* Bottom Controls: Plus (+) Button on Left, Send/Stop on Right */}
           <div className="flex items-center justify-between pt-1">
@@ -1769,7 +1827,20 @@ export default function ProblemPageAiTab({
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsRecordingAudio((prev) => !prev)}
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isRecordingAudio
+                    ? "bg-red-500/10 text-red-500 dark:text-red-400 animate-pulse"
+                    : "text-[#7A756C] dark:text-[#8C8880] hover:text-[#1C1B19] dark:hover:text-white"
+                }`}
+                title={isRecordingAudio ? "Stop voice input" : "Voice input (Groq Whisper Large v3)"}
+              >
+                <Mic className="w-3.5 h-3.5" />
+              </button>
+
               {isSubmitting ? (
                 <button
                   onClick={handleCancelGeneration}

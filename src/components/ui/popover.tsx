@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 
 const Popover = DropdownMenuPrimitive.Root
 const PopoverTrigger = DropdownMenuPrimitive.Trigger
-const PopoverAnchor = (DropdownMenuPrimitive as any).Anchor || DropdownMenuPrimitive.Trigger
+const PopoverAnchor = DropdownMenuPrimitive.Trigger
 
 const PopoverContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,

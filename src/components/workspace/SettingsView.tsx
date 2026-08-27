@@ -42,9 +42,14 @@ import {
   Image as ImageIcon,
   Film,
   Info,
+  Volume2,
+  Mic,
 } from "lucide-react";
 import { toast } from "sonner";
 import { BUILT_IN_SKILLS, DEFAULT_AI_RULES, AiSkill, AiRule } from "@/types/skillsAndRules";
+import { cleanModelName } from "@/utils/cleanModelName";
+import ModelSelectorModal from "./ModelSelectorModal";
+import { CATALOG_BY_PROVIDER, getAllModelsForProvider } from "@/utils/customModelRegistry";
 
 interface SettingsViewProps {
   currentModel: string;
@@ -93,6 +98,14 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [selectedProviderFilter, setSelectedProviderFilter] = useState("All");
   const [modelsDisplayMode, setModelsDisplayMode] = useState<"activeOnly" | "all">("activeOnly");
+  const [modalProvider, setModalProvider] = useState<{ key: string; name: string } | null>(null);
+  const [modelsVersion, setModelsVersion] = useState(0);
+
+  useEffect(() => {
+    const handleUpdate = () => setModelsVersion((v) => v + 1);
+    window.addEventListener("easycode_models_updated", handleUpdate);
+    return () => window.removeEventListener("easycode_models_updated", handleUpdate);
+  }, []);
 
   // Skills State
   const [skills, setSkills] = useState<AiSkill[]>(BUILT_IN_SKILLS);
@@ -175,6 +188,8 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     customBaseUrl: "",
     customApiKey: "",
     customModelName: "",
+    customWhisperUrl: "",
+    customWhisperApiKey: "",
   });
 
   // Server-hosted environment keys detection state (strictly populated from GET /api/user/keys)
@@ -182,6 +197,10 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
 
   // Input password visibility toggles per key
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
+
+  // Speech-to-Text & Voice Engine Preferences
+  const [speechEngine, setSpeechEngine] = useState<string>("auto");
+  const [speechFallback, setSpeechFallback] = useState<boolean>(true);
 
   useEffect(() => {
     if (session?.user) {
@@ -195,10 +214,23 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       const savedLang = localStorage.getItem("easycode_pref_lang");
       if (savedLang) setPreferredLanguage(savedLang);
 
+      const savedSpeechEngine = localStorage.getItem("easycode_speech_engine");
+      if (savedSpeechEngine) setSpeechEngine(savedSpeechEngine);
+
+      const savedSpeechFallback = localStorage.getItem("easycode_speech_fallback");
+      if (savedSpeechFallback !== null) setSpeechFallback(savedSpeechFallback === "true");
+
       const savedSkills = localStorage.getItem("easycode_ai_skills");
       if (savedSkills) {
         try {
-          setSkills(JSON.parse(savedSkills));
+          const parsed = JSON.parse(savedSkills);
+          // Merge built-in skills so factory updates take effect while preserving user toggle state
+          const merged = BUILT_IN_SKILLS.map((b) => {
+            const found = parsed.find((p: any) => p.id === b.id);
+            return found ? { ...b, enabled: found.enabled ?? b.enabled } : b;
+          });
+          const custom = parsed.filter((p: any) => !BUILT_IN_SKILLS.some((b) => b.id === p.id));
+          setSkills([...merged, ...custom]);
         } catch (e) {}
       }
 
@@ -451,6 +483,8 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     try {
       localStorage.setItem("easycode_custom_instructions", customInstructions);
       localStorage.setItem("easycode_pref_lang", preferredLanguage);
+      localStorage.setItem("easycode_speech_engine", speechEngine);
+      localStorage.setItem("easycode_speech_fallback", String(speechFallback));
       toast.success("Settings saved successfully");
     } catch (e) {
       toast.error("Could not save settings");
@@ -733,12 +767,14 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     placeholder,
     isPassword = true,
     providerName = label,
+    hideManageModels = false,
   }: {
     keyName: keyof typeof apiKeys;
     label: string;
     placeholder?: string;
     isPassword?: boolean;
     providerName?: string;
+    hideManageModels?: boolean;
   }) => {
     const rawValue = (apiKeys as any)[keyName] || "";
     const isCustom = Boolean(rawValue);
@@ -860,6 +896,22 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
             </button>
           )}
         </div>
+
+        {!hideManageModels && (keyName === "huggingface" || keyName === "cloudflare") && (
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[10px] text-[#7A756C] dark:text-[#8C8880]">
+              Hub Catalog & Custom Endpoints
+            </span>
+            <button
+              type="button"
+              onClick={() => setModalProvider({ key: keyName as string, name: providerName || label })}
+              className="text-[10px] font-medium text-[#1C1B19] dark:text-[#EDEDEB] hover:opacity-80 flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] transition-colors cursor-pointer"
+            >
+              <Sliders className="w-3 h-3 text-[#7A756C] dark:text-[#8C8880]" />
+              <span>Manage Models</span>
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -1103,7 +1155,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         },
         {
           id: "qwen/qwen3.6-27b",
-          name: "Qwen 3.6 27B (Groq)",
+          name: "Qwen 3.6 27B",
           description: "Qwen 3.6 with deep thinking capabilities on Groq LPUs.",
           contextWindow: "32,000 tokens",
           badge: "Deep CoT",
@@ -1111,7 +1163,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         },
         {
           id: "openai/gpt-oss-120b",
-          name: "GPT-OSS 120B (Groq)",
+          name: "GPT-OSS 120B",
           description: "Flagship open-weights model hosted on Groq LPUs.",
           contextWindow: "128,000 tokens",
           badge: "Flagship",
@@ -1119,7 +1171,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         },
         {
           id: "openai/gpt-oss-20b",
-          name: "GPT-OSS 20B (Groq)",
+          name: "GPT-OSS 20B",
           description: "High-speed open weights reasoning model on Groq.",
           contextWindow: "128,000 tokens",
           badge: "Fast",
@@ -1127,7 +1179,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         },
         {
           id: "allam-2-7b",
-          name: "Allam 2 7B (Groq)",
+          name: "Allam 2 7B",
           description: "Multilingual high-efficiency model on Groq hardware.",
           contextWindow: "32,000 tokens",
           badge: "Multilingual",
@@ -1177,7 +1229,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       models: [
         {
           id: "cerebras-llama-3.3-70b",
-          name: "Llama 3.3 70B (Cerebras)",
+          name: "Llama 3.3 70B",
           description: "Ultra-high speed wafer-scale inference engine.",
           contextWindow: "128,000 tokens",
           badge: "Fast",
@@ -1185,7 +1237,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         },
         {
           id: "cerebras-deepseek-r1-distill-70b",
-          name: "DeepSeek R1 70B (Cerebras)",
+          name: "DeepSeek R1 70B",
           description: "Instantaneous DeepSeek R1 reasoning on Cerebras CS-3 supercomputer chips.",
           contextWindow: "128,000 tokens",
           badge: "Instant CoT",
@@ -1202,7 +1254,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       models: [
         {
           id: "sambanova-deepseek-r1",
-          name: "DeepSeek R1 (SambaNova)",
+          name: "DeepSeek R1",
           description: "Full DeepSeek R1 reasoning running on SambaNova DataScale accelerators.",
           contextWindow: "64,000 tokens",
           badge: "Fast",
@@ -1210,7 +1262,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         },
         {
           id: "sambanova-llama-3.3-70b",
-          name: "Llama 3.3 70B (SambaNova)",
+          name: "Llama 3.3 70B",
           description: "High precision enterprise Llama 3.3 70B on dedicated reconfigurable dataflow units.",
           contextWindow: "128,000 tokens",
           badge: "Fast",
@@ -1277,7 +1329,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       models: [
         {
           id: "siliconflow-deepseek-r1",
-          name: "DeepSeek R1 (SiliconFlow)",
+          name: "DeepSeek R1",
           description: "Dedicated enterprise-grade cloud hosting for full DeepSeek R1 671B model.",
           contextWindow: "64,000 tokens",
           badge: "Full 671B",
@@ -1285,7 +1337,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         },
         {
           id: "siliconflow-qwen-2.5-coder-32b",
-          name: "Qwen 2.5 Coder (SiliconFlow)",
+          name: "Qwen 2.5 Coder 32B",
           description: "Low-latency inference for Qwen 2.5 Coder 32B across multiple regions.",
           contextWindow: "32,000 tokens",
           badge: "Fast",
@@ -1352,7 +1404,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       models: [
         {
           id: "together-llama-3.3-70b",
-          name: "Llama 3.3 70B (Together)",
+          name: "Llama 3.3 70B",
           description: "Meta's flagship open-weights model hosted on Together's high-speed inference engine.",
           contextWindow: "128,000 tokens",
           badge: "Together Cloud",
@@ -1360,7 +1412,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         },
         {
           id: "together-deepseek-r1",
-          name: "DeepSeek R1 (Together)",
+          name: "DeepSeek R1",
           description: "Full DeepSeek R1 671B reasoning on Together GPU cluster.",
           contextWindow: "64,000 tokens",
           badge: "Deep CoT",
@@ -1377,7 +1429,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       models: [
         {
           id: "fireworks-deepseek-r1",
-          name: "DeepSeek R1 (Fireworks)",
+          name: "DeepSeek R1",
           description: "Compound AI reasoning running with speculative decoding for ultra-fast response times.",
           contextWindow: "128,000 tokens",
           badge: "Fast CoT",
@@ -1385,7 +1437,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         },
         {
           id: "fireworks-qwen-2.5-coder-32b",
-          name: "Qwen 2.5 Coder 32B (Fireworks)",
+          name: "Qwen 2.5 Coder 32B",
           description: "High-throughput coding model with optimized KV cache.",
           contextWindow: "32,000 tokens",
           badge: "Speed",
@@ -1450,40 +1502,14 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       provider: "Cloudflare Workers AI",
       category: "Speed",
       requiredKey: "cloudflare",
-      models: [
-        {
-          id: "@cf/meta/llama-3.3-70b-instruct",
-          name: "Llama 3.3 70B",
-          description: "Cloudflare's serverless edge inference running Meta's premier open 70B model.",
-          contextWindow: "128,000 tokens",
-          badge: "Edge SOTA",
-          requiredKey: "cloudflare",
-        },
-        {
-          id: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-          name: "DeepSeek R1 Distill 32B",
-          description: "High-speed edge reasoning model running on Cloudflare global edge network.",
-          contextWindow: "32,000 tokens",
-          badge: "Reasoning",
-          requiredKey: "cloudflare",
-        },
-        {
-          id: "@cf/qwen/qwen2.5-coder-32b-instruct",
-          name: "Qwen 2.5 Coder 32B",
-          description: "Specialized competitive programming and algorithmic coding model.",
-          contextWindow: "32,000 tokens",
-          badge: "Coding",
-          requiredKey: "cloudflare",
-        },
-        {
-          id: "@cf/meta/llama-3.1-8b-instruct",
-          name: "Llama 3.1 8B",
-          description: "Ultra-low latency serverless edge model.",
-          contextWindow: "8,000 tokens",
-          badge: "Instant",
-          requiredKey: "cloudflare",
-        },
-      ],
+      models: getAllModelsForProvider("cloudflare").map((m) => ({
+        id: m.id,
+        name: m.name,
+        description: m.description,
+        contextWindow: m.contextWindow,
+        badge: m.badge,
+        requiredKey: "cloudflare",
+      })),
     },
 
     // 21. Hugging Face (Serverless & ZeroGPU)
@@ -1491,32 +1517,14 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
       provider: "Hugging Face (Inference API)",
       category: "Open Source",
       requiredKey: "huggingface",
-      models: [
-        {
-          id: "Qwen/Qwen2.5-Coder-32B-Instruct",
-          name: "Qwen 2.5 Coder 32B",
-          description: "Hugging Face hosted open coding powerhouse with 32k context.",
-          contextWindow: "32,000 tokens",
-          badge: "Top Coder",
-          requiredKey: "huggingface",
-        },
-        {
-          id: "meta-llama/Llama-3.3-70B-Instruct",
-          name: "Llama 3.3 70B",
-          description: "High-performance instruction-tuned open frontier model.",
-          contextWindow: "128,000 tokens",
-          badge: "Open SOTA",
-          requiredKey: "huggingface",
-        },
-        {
-          id: "deepseek-ai/DeepSeek-R1",
-          name: "DeepSeek R1",
-          description: "DeepSeek R1 full reasoning model on Hugging Face Serverless endpoints.",
-          contextWindow: "64,000 tokens",
-          badge: "Reasoning",
-          requiredKey: "huggingface",
-        },
-      ],
+      models: getAllModelsForProvider("huggingface").map((m) => ({
+        id: m.id,
+        name: m.name,
+        description: m.description,
+        contextWindow: m.contextWindow,
+        badge: m.badge,
+        requiredKey: "huggingface",
+      })),
     },
 
     // 22. Pollinations.ai
@@ -1833,9 +1841,21 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                           <span className={`w-2 h-2 rounded-full ${group.keyIsReady ? "bg-emerald-500" : "bg-neutral-400"}`} />
                           <span>{group.provider}</span>
                         </div>
-                        <span className="text-[10px] font-mono opacity-60 lowercase">
-                          {group.keyIsReady ? "Configured & Active" : "Key Needed"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono opacity-60 lowercase">
+                            {group.keyIsReady ? "Configured & Active" : "Key Needed"}
+                          </span>
+                          {(group.requiredKey === "cloudflare" || group.requiredKey === "huggingface" || group.requiredKey === "groq" || group.requiredKey === "openrouter" || group.requiredKey === "pollinations") && (
+                            <button
+                              type="button"
+                              onClick={() => setModalProvider({ key: group.requiredKey, name: group.provider })}
+                              className="text-[10px] normal-case px-2 py-0.5 rounded-md border border-[#DFDAD0] dark:border-[#383532] bg-white/60 dark:bg-[#242321]/60 hover:bg-white dark:hover:bg-[#2B2927] transition-colors flex items-center gap-1 cursor-pointer font-sans"
+                            >
+                              <Sliders className="w-3 h-3 text-[#7A756C] dark:text-[#8C8880]" />
+                              <span>Customize</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 gap-2">
@@ -1848,7 +1868,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                                 return;
                               }
                               onModelSelect(model.id);
-                              toast.success(`Active model changed to ${model.name}`);
+                              toast.success(`Active model changed to ${cleanModelName(model.name)}`);
                             }}
                             className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
                               !group.keyIsReady
@@ -1861,7 +1881,7 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                             <div className="space-y-1">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-semibold text-[#1C1B19] dark:text-[#EDEDEB]">
-                                  {model.name}
+                                  {cleanModelName(model.name)}
                                 </span>
                                 <span className="text-[10px] px-1.5 py-0.2 rounded border border-neutral-300 dark:border-neutral-700 bg-black/[0.03] dark:bg-white/[0.04] text-neutral-600 dark:text-neutral-400">
                                   {model.badge}
@@ -1969,20 +1989,25 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
             </div>
           </div>
 
-          {/* SECTION 3: ULTRA-FAST HARDWARE INFERENCE */}
+          {/* SECTION 3: OPEN-SOURCE MEGA HUBS & UNIVERSAL SERVERLESS EDGE PROVIDERS */}
           <div className="space-y-3 pt-4 border-t border-[#E8E4DB] dark:border-[#2D2B28]">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
-              <Zap className="w-3.5 h-3.5 text-neutral-500" />
-              <span>Ultra-Fast Hardware Inference Platforms</span>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                <Zap className="w-3.5 h-3.5 text-neutral-500" />
+                <span>Open-Source Mega Hubs & Universal Serverless Edge Providers</span>
+              </div>
+              <span className="text-[10px] text-neutral-400 font-mono">LLMs • Code • Vision • Audio</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {renderApiKeyCard({ keyName: "groq", label: "Groq (LPU Inference)", placeholder: "gsk_..." })}
+              {renderApiKeyCard({ keyName: "huggingface", label: "Hugging Face (1,000,000+ Models Hub)", placeholder: "hf_..." })}
+              {renderApiKeyCard({ keyName: "cloudflare", label: "Cloudflare Workers AI (Serverless Edge GPU)", placeholder: "Custom API Token..." })}
+              {renderApiKeyCard({ keyName: "openrouter", label: "OpenRouter (300+ Model Gateway)", placeholder: "sk-or-v1-..." })}
+              {renderApiKeyCard({ keyName: "groq", label: "Groq (LPU Ultra-Fast Inference)", placeholder: "gsk_..." })}
               {renderApiKeyCard({ keyName: "cerebras", label: "Cerebras Systems", placeholder: "csk-..." })}
               {renderApiKeyCard({ keyName: "sambanova", label: "SambaNova Systems", placeholder: "API key..." })}
-              {renderApiKeyCard({ keyName: "fireworks", label: "Fireworks AI", placeholder: "fw_..." })}
               {renderApiKeyCard({ keyName: "together", label: "Together AI", placeholder: "Together API key..." })}
-              {renderApiKeyCard({ keyName: "openrouter", label: "OpenRouter (300+ Gateway)", placeholder: "sk-or-v1-..." })}
+              {renderApiKeyCard({ keyName: "fireworks", label: "Fireworks AI", placeholder: "fw_..." })}
               {renderApiKeyCard({ keyName: "deepinfra", label: "DeepInfra", placeholder: "API key..." })}
               {renderApiKeyCard({ keyName: "hyperbolic", label: "Hyperbolic", placeholder: "API key..." })}
               {renderApiKeyCard({ keyName: "novita", label: "Novita AI", placeholder: "API key..." })}
@@ -1999,20 +2024,19 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
               <span className="text-[10px] text-neutral-400 font-mono">Specialized Media Only</span>
             </div>
 
-            {/* Explanatory Notice: Gemini / OpenAI already power multimodal tools */}
+            {/* Explanatory Notice: Universal engines already power visual synthesis */}
             <div className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-[#DFDAD0] dark:border-[#383532] text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed space-y-1">
               <div className="flex items-center gap-1.5 font-medium text-neutral-900 dark:text-neutral-100">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Unified Multimodal Engines</span>
+                <span>Universal Hubs & Multimodal Pipelines</span>
               </div>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                All-in-one multimodal platforms like <strong>Google Gemini</strong> and <strong>OpenAI GPT-4o</strong> configured in Section 1 already handle image understanding and generation automatically. The studios below provide dedicated standalone image & video rendering pipelines:
+                All-in-one multimodal platforms (<strong>Google Gemini</strong>, <strong>OpenAI GPT-4o</strong>) and universal hubs (<strong>Hugging Face</strong>, <strong>Cloudflare Workers AI</strong>) configured in Sections 1 & 3 already power image synthesis automatically. The studios below provide dedicated standalone image & video rendering pipelines:
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {renderApiKeyCard({ keyName: "pollinations", label: "Pollinations.ai (FLUX.1 & Motion Video)", placeholder: "Custom token..." })}
-              {renderApiKeyCard({ keyName: "huggingface", label: "Hugging Face (ZeroGPU Spaces)", placeholder: "hf_..." })}
               {renderApiKeyCard({ keyName: "stability", label: "Stability AI (SD3 Large / Ultra)", placeholder: "sk-..." })}
               {renderApiKeyCard({ keyName: "replicate", label: "Replicate (Wan2.1 / LTX / CogVideo)", placeholder: "r8_..." })}
               {renderApiKeyCard({ keyName: "fal", label: "Fal.ai (FLUX.1 Realism & Fast Video)", placeholder: "Key ID:Secret..." })}
@@ -2021,7 +2045,36 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
             </div>
           </div>
 
-          {/* SECTION 5: LOCAL & CUSTOM OPENAI-COMPATIBLE ENDPOINTS */}
+          {/* SECTION 5: DEDICATED SPEECH-TO-TEXT & AUDIO TRANSCRIPTION PIPELINES */}
+          <div className="space-y-3 pt-4 border-t border-[#E8E4DB] dark:border-[#2D2B28]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                <Volume2 className="w-3.5 h-3.5 text-amber-500" />
+                <span>Dedicated Speech-to-Text & Audio Transcription Pipelines</span>
+              </div>
+              <span className="text-[10px] text-neutral-400 font-mono">Standalone Voice Inference</span>
+            </div>
+
+            {/* Explanatory Notice: Gemini / OpenAI / Groq / Cloudflare already power audio tools */}
+            <div className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-[#DFDAD0] dark:border-[#383532] text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed space-y-1">
+              <div className="flex items-center gap-1.5 font-medium text-neutral-900 dark:text-neutral-100">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Unified Multimodal Engines</span>
+              </div>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                All-in-one multimodal platforms like <strong>Google Gemini</strong> and <strong>OpenAI GPT-4o</strong> configured in Section 1 already handle voice and audio understanding automatically. If you already pasted your keys in the sections above (Groq, Cloudflare, OpenAI), they are automatically active here. The standalone pipelines below provide high-speed, dedicated speech-to-text inference with custom key overriding, rate limit protection, and real-time audio visualization:
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {renderApiKeyCard({ keyName: "groq", label: "Groq Whisper Large v3 Turbo (Primary)", placeholder: "gsk_...", hideManageModels: true })}
+              {renderApiKeyCard({ keyName: "cloudflare", label: "Cloudflare Workers AI Whisper (@cf/openai/whisper)", placeholder: "Custom API Token...", hideManageModels: true })}
+              {renderApiKeyCard({ keyName: "openai", label: "OpenAI Whisper (whisper-1)", placeholder: "sk-...", hideManageModels: true })}
+              {renderApiKeyCard({ keyName: "customWhisperUrl", label: "Custom / Local Whisper Base URL", placeholder: "http://localhost:8000/v1", hideManageModels: true })}
+            </div>
+          </div>
+
+          {/* SECTION 6: LOCAL & CUSTOM OPENAI-COMPATIBLE ENDPOINTS */}
           <div className="space-y-3 pt-4 border-t border-[#E8E4DB] dark:border-[#2D2B28]">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
               <HardDrive className="w-3.5 h-3.5 text-neutral-500" />
@@ -2196,6 +2249,19 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                             : "border-[#DFDAD0] dark:border-[#383532] focus:border-neutral-500"
                         } text-xs font-mono text-[#1C1B19] dark:text-[#EDEDEB] placeholder-[#8C877D] dark:placeholder-[#6E6A63] outline-hidden`}
                       />
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] text-[#7A756C] dark:text-[#8C8880]">
+                        Cloudflare @cf Catalog & Custom Endpoints
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setModalProvider({ key: "cloudflare", name: "Cloudflare Workers AI" })}
+                        className="text-[10px] font-medium text-[#1C1B19] dark:text-[#EDEDEB] hover:opacity-80 flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] transition-colors cursor-pointer"
+                      >
+                        <Sliders className="w-3 h-3 text-[#7A756C] dark:text-[#8C8880]" />
+                        <span>Manage Models</span>
+                      </button>
                     </div>
                   </div>
                 );
@@ -3242,6 +3308,120 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                 />
               </button>
             </div>
+
+            {/* Preferred Speech-to-Text & Voice Engine */}
+            <div className="space-y-2 pt-3 border-t border-[#E8E4DB] dark:border-[#2D2B28]">
+              <div>
+                <div className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] flex items-center gap-1.5">
+                  <Mic className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  <span>Speech-to-Text & Voice Engine</span>
+                </div>
+                <div className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">
+                  Choose your primary transcription pipeline for the microphone in the chat and editor docks
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[
+                  {
+                    id: "groq",
+                    name: "Groq Whisper Large v3 Turbo",
+                    badge: "Recommended • 250x Realtime",
+                    desc: "State-of-the-art LPU inference with coding syntax accuracy",
+                  },
+                  {
+                    id: "cloudflare",
+                    name: "Cloudflare Workers AI",
+                    badge: "@cf/openai/whisper Edge",
+                    desc: "Serverless global edge speech transcription",
+                  },
+                  {
+                    id: "openai",
+                    name: "OpenAI Whisper API",
+                    badge: "whisper-1 Cloud",
+                    desc: "Industry standard OpenAI Whisper transcription",
+                  },
+                  {
+                    id: "browser",
+                    name: "Browser Web Speech API",
+                    badge: "Zero-Latency Client",
+                    desc: "100% free, real-time client streaming with zero API keys",
+                  },
+                  {
+                    id: "auto",
+                    name: "Auto Smart Cascade",
+                    badge: "Groq -> Cloudflare -> Browser",
+                    desc: "Attempts fastest cloud engine first with seamless fallback",
+                  },
+                  {
+                    id: "custom",
+                    name: "Custom / Local Whisper",
+                    badge: "Self-Hosted / OpenAI Spec",
+                    desc: "Connects to your custom faster-whisper or local endpoint",
+                  },
+                ].map((engine) => (
+                  <button
+                    key={engine.id}
+                    type="button"
+                    onClick={() => setSpeechEngine(engine.id)}
+                    className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
+                      speechEngine === engine.id
+                        ? "bg-[#1C1B19] text-white dark:bg-white dark:text-[#1C1B19] border-transparent shadow-xs font-medium"
+                        : "border-[#DFDAD0] dark:border-[#383532] bg-white/50 dark:bg-[#282624]/50 text-[#524E48] dark:text-[#A8A49D] hover:bg-white dark:hover:bg-[#33312E]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <span className="font-semibold text-xs truncate">{engine.name}</span>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-medium ${
+                          speechEngine === engine.id
+                            ? "bg-white/20 dark:bg-black/10 text-white dark:text-[#1C1B19]"
+                            : "bg-black/[0.05] dark:bg-white/[0.08] text-neutral-600 dark:text-neutral-400"
+                        }`}
+                      >
+                        {engine.badge}
+                      </span>
+                    </div>
+                    <p
+                      className={`text-[10px] leading-tight ${
+                        speechEngine === engine.id
+                          ? "text-white/80 dark:text-[#1C1B19]/80"
+                          : "text-[#7A756C] dark:text-[#8C8880]"
+                      }`}
+                    >
+                      {engine.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              {/* Automatic Fallback to Browser */}
+              <div className="flex items-center justify-between pt-1">
+                <div>
+                  <div className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB]">
+                    Auto-fallback to Browser Speech
+                  </div>
+                  <div className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">
+                    Instantly activates browser speech recognition if cloud engine hits rate limits or is offline
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSpeechFallback(!speechFallback)}
+                  className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 ${
+                    speechFallback ? "bg-[#3A3733] dark:bg-white" : "bg-black/[0.1] dark:bg-white/[0.1]"
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full transition-transform ${
+                      speechFallback
+                        ? "translate-x-4 bg-white dark:bg-[#1C1B19]"
+                        : "translate-x-0 bg-white dark:bg-[#8C8880]"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="pt-2">
@@ -3253,6 +3433,16 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
             </button>
           </div>
         </div>
+      )}
+
+      {/* Model Selector & Custom ID Modal */}
+      {modalProvider && (
+        <ModelSelectorModal
+          isOpen={Boolean(modalProvider)}
+          onClose={() => setModalProvider(null)}
+          providerKey={modalProvider.key}
+          providerDisplayName={modalProvider.name}
+        />
       )}
 
     </div>
