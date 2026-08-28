@@ -3234,7 +3234,7 @@ export default function AiWorkspace() {
                                     e.target.style.height = "auto";
                                     e.target.style.height = `${e.target.scrollHeight}px`;
                                   }}
-                                  className="w-full bg-black/40 text-white dark:text-[#EDEDEB] p-2.5 rounded-xl border border-white/15 outline-hidden text-xs sm:text-sm font-sans resize-none overflow-hidden focus:border-white/30 focus:outline-hidden focus:ring-0 transition-all leading-relaxed"
+                                  className="w-full bg-transparent text-white dark:text-[#EDEDEB] p-0.5 border-0 outline-none focus:outline-none focus:ring-0 text-xs sm:text-sm font-sans resize-none overflow-hidden transition-all leading-relaxed"
                                   autoFocus
                                   onKeyDown={(e) => {
                                     const isChanged = editingText.trim() !== msg.content.trim();

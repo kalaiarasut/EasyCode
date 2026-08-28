@@ -52,15 +52,25 @@ export async function GET(req: NextRequest) {
             }, { status: 404 });
         }
 
+        const rawTestCases = problem.test_cases;
+        let testCasesList: any[] = [];
+        if (Array.isArray(rawTestCases)) {
+            testCasesList = rawTestCases;
+        } else if (rawTestCases && typeof rawTestCases === "object" && Array.isArray(rawTestCases.visible)) {
+            testCasesList = rawTestCases.visible;
+        }
+
         const formattedProblem = {
             ...problem,
             _id: problem.id,
-            testCases: problem.test_cases || [],
+            testCases: testCasesList,
+            test_cases: problem.test_cases,
             topics: Array.isArray(problem.topics) ? problem.topics.join(",") : problem.topics || "",
             companies: Array.isArray(problem.companies) ? problem.companies.join(",") : problem.companies || "",
             similarQuestions: [],
-            solutions: []
+            solutions: problem.official_solutions || []
         };
+
 
         return NextResponse.json({
             success: true,

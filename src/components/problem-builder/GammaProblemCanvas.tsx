@@ -24,7 +24,9 @@ interface GammaProblemCanvasProps {
 // Clean LaTeX and mathematical markup into clean LeetCode styled plain text
 function cleanLatexMath(raw: string): string {
   if (!raw) return "";
-  return raw
+  let cleaned = raw
+    .replace(/\\mathcal\{O\}\(([^)]+)\)/g, "O($1)")
+    .replace(/\\mathcal\{O\}/g, "O")
     .replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => cleanMathFormula(math))
     .replace(/\$([^$\n]+)\$/g, (_, math) => cleanMathFormula(math))
     .replace(/\\text\{([^}]+)\}/g, "$1")
@@ -47,6 +49,10 @@ function cleanLatexMath(raw: string): string {
     .replace(/\\quad/g, " ")
     .replace(/\\qquad/g, "  ")
     .replace(/\\_/g, "_");
+
+  // Auto-wrap bare Big-O complexity (e.g. O(1), O(N), O(log N)) in backticks
+  cleaned = cleaned.replace(/(?<![`\w])(O\([a-zA-Z0-9_+\-*\/^ ]+\))(?![`\w])/g, "`$1`");
+  return cleaned;
 }
 
 function cleanMathFormula(math: string): string {
@@ -596,10 +602,12 @@ ${problem.examples.map((ex, i) => `### Example ${i + 1}\n**Input:** \`${ex.input
               stageLabel="Follow-up"
               className="mb-4"
             >
-              <p style={{ ...pStyle, margin: '0 0 32px 0' }} className="dark:text-[#d1d1d1]">
-                <strong style={{ fontWeight: 700 }} className="text-[#262626] dark:text-[#f0f0f0]">Follow-up:&nbsp;</strong>
-                <span>{cleanLatexMath(problem.followUp.prompt)}</span>
-              </p>
+              <div className="mb-8">
+                <p style={{ ...pStyle, margin: '0 0 4px 0' }} className="dark:text-[#d1d1d1]">
+                  <strong style={{ fontWeight: 700 }} className="text-[#262626] dark:text-[#f0f0f0]">Follow-up:&nbsp;</strong>
+                </p>
+                {renderFormattedParagraph(problem.followUp.prompt, 0)}
+              </div>
             </OceanicActiveSection>
           )}
 

@@ -28,6 +28,7 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -50,11 +51,13 @@ interface ProblemPageCodeEditorProps {
   sourceCode: string;
   setSourceCode: React.Dispatch<React.SetStateAction<string>>;
   problemId?: string;
+  problemInfo?: any;
   isNoteOpen?: boolean;
   activeEditorTab?: 'code' | 'note';
   setActiveEditorTab?: (tab: 'code' | 'note') => void;
   onCloseNote?: () => void;
 }
+
 
 export const codingLanguages = {
   // Column 1
@@ -248,6 +251,70 @@ const column1Languages: LanguageName[] = ["C++", "Java", "Python3", "Python", "J
 const column2Languages: LanguageName[] = ["Go", "Kotlin", "Swift", "Rust", "Ruby", "PHP", "Dart", "Scala"];
 const column3Languages: LanguageName[] = ["Elixir", "Erlang", "Racket"];
 
+// Helper to resolve starter boilerplate from problemInfo code_templates or fallback to language defaults
+function getBoilerplateForLang(lang: string, pInfo?: any): string {
+  const langConfig = codingLanguages[lang as LanguageName] || codingLanguages["Python"] || codingLanguages["C++"];
+  
+  if (pInfo?.code_templates && typeof pInfo.code_templates === "object") {
+    const templates = pInfo.code_templates;
+    const lower = lang.toLowerCase();
+    
+    if (lower === "python3" && templates.python3) return templates.python3;
+    if (lower === "python" && (templates.python || templates.python3)) return templates.python || templates.python3;
+    if ((lower === "c++" || lower === "cpp") && templates.cpp) return templates.cpp;
+    if (lower === "java" && templates.java) return templates.java;
+    if (lower === "javascript" && templates.javascript) return templates.javascript;
+    if (lower === "typescript" && templates.typescript) return templates.typescript;
+    if (lower === "c" && templates.c) return templates.c;
+    if ((lower === "c#" || lower === "csharp") && templates.csharp) return templates.csharp;
+    if ((lower === "go" || lower === "golang") && templates.golang) return templates.golang;
+    if (lower === "rust" && templates.rust) return templates.rust;
+    if (lower === "swift" && templates.swift) return templates.swift;
+    if (lower === "kotlin" && templates.kotlin) return templates.kotlin;
+    if (lower === "dart" && templates.dart) return templates.dart;
+    if (lower === "php" && templates.php) return templates.php;
+    if (lower === "ruby" && templates.ruby) return templates.ruby;
+    if (lower === "scala" && templates.scala) return templates.scala;
+    if (lower === "racket" && templates.racket) return templates.racket;
+    if (lower === "erlang" && templates.erlang) return templates.erlang;
+    if (lower === "elixir" && templates.elixir) return templates.elixir;
+  }
+  
+  return langConfig?.defaultBoilerplate || "";
+}
+
+// Helper to check if specific language has synthesized template
+function hasCustomStarterCodeForLang(lang: string, pInfo?: any): boolean {
+  if (!pInfo) return false;
+  const templates = pInfo.code_templates || pInfo.starterCode;
+  if (!templates || typeof templates !== "object") return false;
+  const lower = lang.toLowerCase();
+  
+  if (lower === "python3" && (templates.python3 || templates.python)) return true;
+  if (lower === "python" && (templates.python || templates.python3)) return true;
+  if ((lower === "c++" || lower === "cpp") && (templates.cpp || templates["c++"])) return true;
+  if (lower === "java" && templates.java) return true;
+  if (lower === "javascript" && templates.javascript) return true;
+  if (lower === "typescript" && templates.typescript) return true;
+  if (lower === "c" && templates.c) return true;
+  if ((lower === "c#" || lower === "csharp") && (templates.csharp || templates["c#"])) return true;
+  if ((lower === "go" || lower === "golang") && (templates.golang || templates.go)) return true;
+  if (lower === "rust" && templates.rust) return true;
+  if (lower === "swift" && templates.swift) return true;
+  if (lower === "kotlin" && templates.kotlin) return true;
+  if (lower === "dart" && templates.dart) return true;
+  if (lower === "php" && templates.php) return true;
+  if (lower === "ruby" && templates.ruby) return true;
+  if (lower === "scala" && templates.scala) return true;
+  if (lower === "racket" && templates.racket) return true;
+  if (lower === "erlang" && templates.erlang) return true;
+  if (lower === "elixir" && templates.elixir) return true;
+  
+  return false;
+}
+
+
+
 export default function ProblemPageCodeEditor({
   theme,
   selectedLanguage,
@@ -256,6 +323,7 @@ export default function ProblemPageCodeEditor({
   sourceCode,
   setSourceCode,
   problemId = "default_problem",
+  problemInfo,
   isNoteOpen = false,
   activeEditorTab = 'code',
   setActiveEditorTab,
@@ -273,6 +341,11 @@ export default function ProblemPageCodeEditor({
     deletions: number;
     oldCode: string;
   } | null>(null);
+
+  // Language Selection & AI Template Generator State
+  const [isLangMenuOpen, setIsLangMenuOpen] = useState<boolean>(false);
+  const [pendingGenLang, setPendingGenLang] = useState<LanguageName | null>(null);
+  const [isGeneratingStarterCode, setIsGeneratingStarterCode] = useState<boolean>(false);
 
   // Agent Active Editing & Oceanic Shimmer State
   const [isAgentEditing, setIsAgentEditing] = useState<boolean>(false);
@@ -394,28 +467,142 @@ export default function ProblemPageCodeEditor({
   useEffect(() => {
     const langConfig = codingLanguages[selectedLanguage as LanguageName] || codingLanguages["Java"] || codingLanguages["C++"];
     setSelectedLanguageCode(langConfig.apiId);
+    
+    // Automatically populate boilerplate from problemInfo code_templates or language defaults
     if (!sourceCode && problemId !== "new" && problemId !== "generate" && !problemId.startsWith("c0000000")) {
-      setSourceCode(langConfig.defaultBoilerplate);
+      const starter = getBoilerplateForLang(selectedLanguage, problemInfo);
+      setSourceCode(starter);
     }
-  }, [selectedLanguage]);
+  }, [selectedLanguage, problemInfo]);
 
   const handleLanguageChange = (lang: LanguageName) => {
     setSelectedLanguage(lang);
     const langConfig = codingLanguages[lang];
     setSelectedLanguageCode(langConfig.apiId);
     if (problemId !== "new" && problemId !== "generate" && !problemId.startsWith("c0000000")) {
-      setSourceCode(langConfig.defaultBoilerplate);
+      const starter = getBoilerplateForLang(lang, problemInfo);
+      setSourceCode(starter);
+    }
+  };
+
+  const isAiProblem = problemInfo && (problemInfo._id?.toString().startsWith("gen-") || problemInfo.starterCode);
+
+  const handleLanguageItemClick = (lang: LanguageName) => {
+    setIsLangMenuOpen(false); // Menu closes immediately upon selection
+
+    const isAvailable = !isAiProblem || hasCustomStarterCodeForLang(lang, problemInfo);
+
+    if (isAvailable) {
+      handleLanguageChange(lang);
+    } else {
+      // Prompt user with modal to generate starter code for this language
+      setPendingGenLang(lang);
+    }
+  };
+
+  const handleGenerateLanguageCode = async (targetLang: LanguageName) => {
+    setIsGeneratingStarterCode(true);
+    // Dispatch agent status event for live oceanic wave feedback
+    window.dispatchEvent(
+      new CustomEvent("easycode-agent-status-change", {
+        detail: { isAgentMode: true, isGenerating: true, verb: `Synthesizing ${targetLang}` },
+      })
+    );
+
+    try {
+      let apiKeys: Record<string, string> = {};
+      try {
+        const saved = localStorage.getItem("easycode_custom_keys");
+        if (saved) apiKeys = JSON.parse(saved);
+      } catch (e) {}
+
+      const prompt = `You are an expert LeetCode problem template generator.
+Generate the standard LeetCode starter code template for the problem "${problemInfo?.title || "Problem"}" in ${targetLang}.
+Problem Description:
+${problemInfo?.description || ""}
+
+Existing Starter Code (Python reference):
+${problemInfo?.starterCode?.python || problemInfo?.code_templates?.python || sourceCode || ""}
+
+Constraints & Types:
+${Array.isArray(problemInfo?.constraints) ? problemInfo.constraints.join("\n") : ""}
+
+Return ONLY the clean starter code class/function definition enclosed in a single \`\`\`${codingLanguages[targetLang]?.compilerId || "text"} ... \`\`\` markdown code block. Include proper type annotations and standard imports. Do NOT provide the solution implementation or extra explanation.`;
+
+      const res = await fetch("/api/code/chat-output", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          inputMessage: prompt,
+          targetModel: localStorage.getItem("easycode_last_active_model") || "gemini-3.6-flash",
+          stream: false,
+          customKeys: apiKeys,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to generate language starter code");
+      }
+
+      const data = await res.json();
+      const rawOutput = data.output || "";
+      const codeMatch = rawOutput.match(/```(?:[a-zA-Z0-9_+#-]+)?\s*([\s\S]*?)```/i);
+      const generatedCode = codeMatch ? codeMatch[1].trim() : rawOutput.trim();
+
+      if (generatedCode) {
+        if (!problemInfo.code_templates) problemInfo.code_templates = {};
+        if (!problemInfo.starterCode) problemInfo.starterCode = {};
+        
+        const lower = targetLang.toLowerCase();
+        const codeKey = lower.includes("python3") ? "python3" : lower.includes("python") ? "python" : lower.includes("c++") ? "cpp" : lower.includes("java") && !lower.includes("script") ? "java" : lower.includes("typescript") ? "typescript" : lower.includes("javascript") ? "javascript" : targetLang;
+        
+        problemInfo.code_templates[codeKey] = generatedCode;
+        problemInfo.starterCode[codeKey] = generatedCode;
+
+        setSelectedLanguage(targetLang);
+        const langConfig = codingLanguages[targetLang];
+        if (langConfig?.apiId) {
+          setSelectedLanguageCode(langConfig.apiId);
+        }
+        setSourceCode(generatedCode);
+
+        // Dispatch applied event for green diff highlight and oceanic pulse
+        window.dispatchEvent(
+          new CustomEvent("easycode-agent-diff-applied", {
+            detail: {
+              isReviewModeAccept: true,
+              additions: generatedCode.split("\n").length,
+              deletions: 0,
+            },
+          })
+        );
+
+        toast.success(`Generated ${targetLang} starter template!`);
+      } else {
+        toast.error("Could not parse generated code template");
+      }
+    } catch (err: any) {
+      console.error("Error generating starter code:", err);
+      toast.error(err?.message || "Error generating starter code");
+    } finally {
+      window.dispatchEvent(
+        new CustomEvent("easycode-agent-status-change", {
+          detail: { isAgentMode: false, isGenerating: false },
+        })
+      );
+      setIsGeneratingStarterCode(false);
+      setPendingGenLang(null);
     }
   };
 
   const handleResetCode = () => {
-    const langConfig = codingLanguages[selectedLanguage as LanguageName] || codingLanguages["Java"] || codingLanguages["C++"];
     if (problemId !== "new" && problemId !== "generate" && !problemId.startsWith("c0000000")) {
-      setSourceCode(langConfig.defaultBoilerplate);
+      const starter = getBoilerplateForLang(selectedLanguage, problemInfo);
+      setSourceCode(starter);
     } else {
       setSourceCode("");
     }
-    toast.info("Editor reset");
+    toast.info("Editor reset to starter template");
   };
 
   const handleFormatCode = () => {
@@ -493,26 +680,40 @@ export default function ProblemPageCodeEditor({
 
   const renderLangItem = (lang: LanguageName) => {
     const isSelected = selectedLanguage === lang;
+    const isAvailable = !isAiProblem || hasCustomStarterCodeForLang(lang, problemInfo);
     const hasInfo = (codingLanguages[lang] as any).hasInfo;
+
     return (
       <div
         key={lang}
-        onClick={() => handleLanguageChange(lang)}
+        onClick={() => handleLanguageItemClick(lang)}
         className={`flex items-center justify-between px-3 py-1.5 rounded-md text-[13.5px] cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors ${
-          isSelected ? 'font-semibold text-neutral-900 dark:text-white' : 'text-neutral-700 dark:text-neutral-300'
+          isSelected
+            ? 'font-semibold text-neutral-900 dark:text-white'
+            : isAvailable
+            ? 'text-neutral-700 dark:text-neutral-300'
+            : 'text-neutral-400 dark:text-neutral-500'
         }`}
       >
         <div className="flex items-center gap-2">
           {isSelected ? (
-            <Check className="w-3.5 h-3.5 text-neutral-900 dark:text-white" />
+            <Check className="w-3.5 h-3.5 text-neutral-900 dark:text-white shrink-0" />
           ) : (
-            <div className="w-3.5 h-3.5" />
+            <div className="w-3.5 h-3.5 shrink-0" />
           )}
-          <span>{lang}</span>
+          <span className={!isAvailable ? "text-neutral-400 dark:text-neutral-500" : ""}>{lang}</span>
         </div>
-        {hasInfo && (
-          <Info className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500" />
-        )}
+        <div className="flex items-center gap-1.5">
+          {!isAvailable && (
+            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-400 dark:text-neutral-500 border border-neutral-200/60 dark:border-neutral-700/60">
+              <Sparkles className="w-2.5 h-2.5 text-amber-500/80" />
+              AI
+            </span>
+          )}
+          {hasInfo && (
+            <Info className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500" />
+          )}
+        </div>
       </div>
     );
   };
@@ -743,7 +944,7 @@ export default function ProblemPageCodeEditor({
             {/* Left: Language selector + Auto */}
             <div className="flex items-center gap-1.5">
               {/* 3-Column Language Selector Dropdown */}
-              <DropdownMenu>
+              <DropdownMenu open={isLangMenuOpen} onOpenChange={setIsLangMenuOpen}>
                 <DropdownMenuTrigger
                   className="flex items-center gap-1 cursor-pointer outline-none"
                   style={{
@@ -938,6 +1139,75 @@ export default function ProblemPageCodeEditor({
           </div>
         </>
       )}
+
+      {/* AI Language Starter Code Synthesis Modal (Adaptive Obsidian/Cream Theme) */}
+      <AnimatePresence>
+        {pendingGenLang && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              className="w-full max-w-md rounded-2xl bg-[#FAF8F5] dark:bg-[#1C1B19] border border-[#DFDAD0] dark:border-[#383532] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xl p-5 space-y-4 font-sans"
+            >
+              <div className="flex items-center justify-between border-b border-black/[0.08] dark:border-white/[0.08] pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Generate {pendingGenLang} Code?</h3>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400">AI Starter Code Synthesis</p>
+                  </div>
+                </div>
+                <button
+                  disabled={isGeneratingStarterCode}
+                  onClick={() => !isGeneratingStarterCode && setPendingGenLang(null)}
+                  className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
+                <p>
+                  This problem was generated with starter code in <strong className="text-neutral-900 dark:text-white font-semibold">{selectedLanguage}</strong>.
+                </p>
+                <p className="text-neutral-500 dark:text-neutral-400">
+                  Would you like EasyCode AI to synthesize the tailored <strong className="text-amber-600 dark:text-amber-300 font-semibold">{pendingGenLang}</strong> class signature, parameter typing, and imports?
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  disabled={isGeneratingStarterCode}
+                  onClick={() => setPendingGenLang(null)}
+                  className="px-3.5 py-1.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-xs font-medium text-neutral-700 dark:text-neutral-300 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={isGeneratingStarterCode}
+                  onClick={() => handleGenerateLanguageCode(pendingGenLang)}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold text-xs transition-all shadow-md cursor-pointer disabled:opacity-50"
+                >
+                  {isGeneratingStarterCode ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Synthesizing {pendingGenLang}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Generate {pendingGenLang} Code</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Global CSS for Agent Diff Highlights in Monaco Editor */}
       <style jsx global>{`

@@ -1846,7 +1846,7 @@ export default function ProblemPageAiTab({
                       e.target.style.height = "auto";
                       e.target.style.height = `${e.target.scrollHeight}px`;
                     }}
-                    className="w-full bg-white/70 dark:bg-black/40 text-neutral-900 dark:text-neutral-100 p-2.5 rounded-xl border border-black/10 dark:border-white/15 outline-hidden text-xs sm:text-sm font-sans resize-none overflow-hidden focus:border-neutral-400 dark:focus:border-white/30 focus:outline-hidden focus:ring-0 transition-all leading-relaxed"
+                    className="w-full bg-transparent text-neutral-900 dark:text-neutral-100 p-0.5 border-0 outline-none focus:outline-none focus:ring-0 text-xs sm:text-sm font-sans resize-none overflow-hidden transition-all leading-relaxed"
                     autoFocus
                     onKeyDown={(e) => {
                       const isChanged = editingChatText.trim() !== chat.input.trim();

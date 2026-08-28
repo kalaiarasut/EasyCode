@@ -202,7 +202,27 @@ export default function ProblemPage() {
 
           const data = await res.json();
           if (data.success && data.problem) {
+            const adapted: any = {
+              _id: "gen-" + Date.now(),
+              title: data.problem.title,
+              level: data.problem.level || data.problem.difficulty || "Medium",
+              description: data.problem.description,
+              examples: data.problem.examples,
+              constraints: data.problem.constraints,
+              testCases: data.problem.testCases?.visible || data.problem.testCases || data.problem.examples || [],
+              topics: data.problem.topics,
+              companies: data.problem.companies || ["Google", "Meta", "Amazon"],
+              hints: data.problem.hints,
+              followUp: data.problem.followUp,
+              expectedComplexity: data.problem.expectedComplexity,
+              edgeCases: data.problem.edgeCases,
+              starterCode: data.problem.starterCode,
+              code_templates: data.problem.starterCode || {},
+            };
+
             setLiveGeneratedProblem(data.problem);
+            setProblemInfo(adapted);
+
             // Synchronize starter code stub to editor automatically for the preferred language
             if (data.problem.starterCode) {
               const currentLang = localStorage.getItem("easycode_pref_lang") || selectedLanguage || "Python";
@@ -527,6 +547,7 @@ export default function ProblemPage() {
                     sourceCode={sourceCode}
                     setSourceCode={setSourceCode}
                     problemId={problemId}
+                    problemInfo={problemInfo}
                     isNoteOpen={isNoteOpen}
                     activeEditorTab={activeEditorTab}
                     setActiveEditorTab={setActiveEditorTab}
@@ -669,6 +690,7 @@ export default function ProblemPage() {
                     sourceCode={sourceCode}
                     setSourceCode={setSourceCode}
                     problemId={problemId}
+                    problemInfo={problemInfo}
                     isNoteOpen={isNoteOpen}
                     activeEditorTab={activeEditorTab}
                     setActiveEditorTab={setActiveEditorTab}

@@ -67,9 +67,15 @@ export default function ProblemPageTestResult({
 
   const [selectedCaseIdx, setSelectedCaseIdx] = useState<number>(0);
   const extractTestCases = (info: any): Array<{ input: string; output: string }> => {
-    if (!info?.testCases) return [];
-    if (Array.isArray(info.testCases)) return info.testCases;
-    if (Array.isArray(info.testCases.visible)) return info.testCases.visible;
+    if (!info) return [];
+    if (Array.isArray(info.testCases) && info.testCases.length > 0) return info.testCases;
+    if (Array.isArray(info.testCases?.visible) && info.testCases.visible.length > 0) return info.testCases.visible;
+    if (Array.isArray(info.examples) && info.examples.length > 0) {
+      return info.examples.map((ex: any) => ({
+        input: ex.input || "",
+        output: ex.output || "",
+      }));
+    }
     return [];
   };
 
