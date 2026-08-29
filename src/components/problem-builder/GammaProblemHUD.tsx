@@ -242,15 +242,17 @@ ${problem.hints.map((h, i) => `${i + 1}. ${h}`).join("\n")}
         </div>
       </div>
 
-      {/* Bottom row: Animated Progress Bar */}
-      <div className="w-full bg-black/[0.05] dark:bg-white/[0.08] h-1.5 rounded-full overflow-hidden relative">
-        <motion.div
-          className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-blue-500 rounded-full"
-          initial={{ width: "0%" }}
-          animate={{ width: `${progressPercent}%` }}
-          transition={{ duration: 0.3, ease: "easeOut" }}
-        />
-      </div>
+      {/* Bottom row: Animated Progress Bar (only visible during generation) */}
+      {!isCompleted && progressPercent < 100 && (
+        <div className="w-full bg-black/[0.05] dark:bg-white/[0.08] h-1.5 rounded-full overflow-hidden relative">
+          <motion.div
+            className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-amber-500 rounded-full"
+            initial={{ width: "0%" }}
+            animate={{ width: `${progressPercent}%` }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+          />
+        </div>
+      )}
     </div>
   );
 }

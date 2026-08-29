@@ -223,6 +223,16 @@ export default function ProblemPage() {
             setLiveGeneratedProblem(data.problem);
             setProblemInfo(adapted);
 
+            // Persist generated problem to storage so it survives hard refresh
+            try {
+              localStorage.setItem("easycode_last_generated_problem", JSON.stringify(data.problem));
+            } catch (e) {}
+
+            // Clean the URL query parameters so hard refresh (F5) preserves the problem without re-triggering generation
+            if (typeof window !== "undefined") {
+              window.history.replaceState(null, "", window.location.pathname);
+            }
+
             // Synchronize starter code stub to editor automatically for the preferred language
             if (data.problem.starterCode) {
               const currentLang = localStorage.getItem("easycode_pref_lang") || selectedLanguage || "Python";
@@ -260,6 +270,64 @@ export default function ProblemPage() {
       triggerGeneration();
     }
   }, [mounted, searchParams]);
+
+  // Restore cached generated problem on refresh if on /problem/new without active generate parameter
+  useEffect(() => {
+    if (!mounted) return;
+    if (problemId === "new" && searchParams?.get("generate") !== "true") {
+      try {
+        const cachedStr = localStorage.getItem("easycode_last_generated_problem");
+        if (cachedStr) {
+          const cached = JSON.parse(cachedStr);
+          if (cached?.title && !problemInfo && !liveGeneratedProblem) {
+            const adapted: any = {
+              _id: "gen-" + (cached._id || Date.now()),
+              title: cached.title,
+              level: cached.level || cached.difficulty || "Medium",
+              description: cached.description,
+              examples: cached.examples,
+              constraints: cached.constraints,
+              testCases: cached.testCases?.visible || cached.testCases || cached.examples || [],
+              topics: cached.topics,
+              companies: cached.companies || ["Google", "Meta", "Amazon"],
+              hints: cached.hints,
+              followUp: cached.followUp,
+              expectedComplexity: cached.expectedComplexity,
+              edgeCases: cached.edgeCases,
+              starterCode: cached.starterCode,
+              code_templates: cached.starterCode || {},
+            };
+
+            setLiveGeneratedProblem(cached);
+            setProblemInfo(adapted);
+
+            if (cached.starterCode) {
+              const currentLang = localStorage.getItem("easycode_pref_lang") || selectedLanguage || "Python";
+              const lowerLang = currentLang.toLowerCase();
+              const codeKey = lowerLang.includes("python")
+                ? "python"
+                : lowerLang.includes("c++") || lowerLang.includes("cpp")
+                ? "cpp"
+                : lowerLang.includes("java") && !lowerLang.includes("script")
+                ? "java"
+                : lowerLang.includes("type")
+                ? "typescript"
+                : "javascript";
+
+              const matchedCode =
+                (cached.starterCode as any)[codeKey] ||
+                cached.starterCode.python ||
+                cached.starterCode.cpp ||
+                "";
+              if (matchedCode) {
+                setSourceCode(matchedCode);
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    }
+  }, [mounted, problemId, searchParams]);
 
   // Fetch problem details for static problems
   useEffect(() => {

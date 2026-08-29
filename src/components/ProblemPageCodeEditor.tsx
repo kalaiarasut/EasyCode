@@ -501,8 +501,21 @@ export default function ProblemPageCodeEditor({
   };
 
   const handleGenerateLanguageCode = async (targetLang: LanguageName) => {
+    // 1. Immediately close modal so user can see live synthesis in Monaco
+    setPendingGenLang(null);
     setIsGeneratingStarterCode(true);
-    // Dispatch agent status event for live oceanic wave feedback
+
+    const langConfig = codingLanguages[targetLang];
+    const previousCode = sourceCode;
+
+    // 2. Immediately switch language and show live synthesis comment
+    setSelectedLanguage(targetLang);
+    if (langConfig?.apiId) {
+      setSelectedLanguageCode(langConfig.apiId);
+    }
+    setSourceCode(`// EasyCode AI: Synthesizing ${targetLang} solution stub...\n// Initializing typed signatures, imports & class structure...`);
+
+    // 3. Dispatch agent status event for live oceanic wave feedback on editor
     window.dispatchEvent(
       new CustomEvent("easycode-agent-status-change", {
         detail: { isAgentMode: true, isGenerating: true, verb: `Synthesizing ${targetLang}` },
@@ -522,7 +535,7 @@ Problem Description:
 ${problemInfo?.description || ""}
 
 Existing Starter Code (Python reference):
-${problemInfo?.starterCode?.python || problemInfo?.code_templates?.python || sourceCode || ""}
+${problemInfo?.starterCode?.python || problemInfo?.code_templates?.python || previousCode || ""}
 
 Constraints & Types:
 ${Array.isArray(problemInfo?.constraints) ? problemInfo.constraints.join("\n") : ""}
@@ -559,11 +572,6 @@ Return ONLY the clean starter code class/function definition enclosed in a singl
         problemInfo.code_templates[codeKey] = generatedCode;
         problemInfo.starterCode[codeKey] = generatedCode;
 
-        setSelectedLanguage(targetLang);
-        const langConfig = codingLanguages[targetLang];
-        if (langConfig?.apiId) {
-          setSelectedLanguageCode(langConfig.apiId);
-        }
         setSourceCode(generatedCode);
 
         // Dispatch applied event for green diff highlight and oceanic pulse
@@ -579,10 +587,12 @@ Return ONLY the clean starter code class/function definition enclosed in a singl
 
         toast.success(`Generated ${targetLang} starter template!`);
       } else {
+        setSourceCode(previousCode);
         toast.error("Could not parse generated code template");
       }
     } catch (err: any) {
       console.error("Error generating starter code:", err);
+      setSourceCode(previousCode);
       toast.error(err?.message || "Error generating starter code");
     } finally {
       window.dispatchEvent(
@@ -591,7 +601,6 @@ Return ONLY the clean starter code class/function definition enclosed in a singl
         })
       );
       setIsGeneratingStarterCode(false);
-      setPendingGenLang(null);
     }
   };
 
