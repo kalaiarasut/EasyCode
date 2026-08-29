@@ -57,7 +57,9 @@ import {
   List,
   ListOrdered,
   Quote,
-  Code
+  Code,
+  Search,
+  Cpu
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -268,8 +270,9 @@ export default function AgenticSolutionsPanel() {
   const [currentLayout, setCurrentLayout] = useState<WorkspaceLayoutType>('default');
 
   // Ask AI State matching ProblemPageAiTab.tsx
-  const [aiSelectedModel, setAiSelectedModel] = useState("Claude 3.7 Sonnet");
+  const [aiSelectedModel, setAiSelectedModel] = useState("Claude Opus 5");
   const [aiModelDropdownOpen, setAiModelDropdownOpen] = useState(false);
+  const [aiModelSearch, setAiModelSearch] = useState("");
   const [aiInput, setAiInput] = useState("");
   const [aiThinkingVerb, setAiThinkingVerb] = useState("Synthesizing");
   const [aiIsGenerating, setAiIsGenerating] = useState(false);
@@ -1085,7 +1088,7 @@ export default function AgenticSolutionsPanel() {
         </AnimatePresence>
 
         {/* 5. REAL WORKSPACE: EXACT REPLICA OF THE REAL PROBLEM PAGE */}
-        <div className={`p-2.5 grid gap-2.5 min-h-[540px] ${
+        <div className={`p-2.5 grid gap-2.5 h-[650px] ${
           currentLayout === 'focus'
             ? 'grid-cols-1'
             : currentLayout === 'leet' || currentLayout === 'note-taking' || currentLayout === 'debug'
@@ -1099,7 +1102,7 @@ export default function AgenticSolutionsPanel() {
               currentLayout === 'leet' || currentLayout === 'note-taking' || currentLayout === 'debug'
                 ? 'lg:col-span-4'
                 : 'lg:col-span-6'
-            } rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] flex flex-col shadow-xs overflow-hidden`}>
+            } rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] flex flex-col h-full shadow-xs overflow-hidden`}>
               
               {/* Tab Navigation (Matching ProblemPageNavigation.tsx exactly) */}
               <div
@@ -1392,33 +1395,80 @@ export default function AgenticSolutionsPanel() {
                   <div className="flex items-center justify-between pb-2 border-b border-neutral-200 dark:border-neutral-800">
                     <div className="relative">
                       <button
-                        onClick={() => setAiModelDropdownOpen(!aiModelDropdownOpen)}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-xs font-semibold text-neutral-800 dark:text-neutral-200 cursor-pointer"
+                        onClick={() => { setAiModelDropdownOpen(!aiModelDropdownOpen); setAiModelSearch(""); }}
+                        className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white dark:bg-[#201f1d] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.1] text-xs font-medium text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer shadow-2xs"
                       >
                         <Brain className="w-3.5 h-3.5 text-amber-500" />
-                        <span>{aiSelectedModel}</span>
-                        <ChevronDown className="w-3 h-3 opacity-60" />
+                        <span className="truncate max-w-[140px]">{aiSelectedModel}</span>
+                        <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
                       </button>
 
                       {aiModelDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 w-52 rounded-xl bg-white dark:bg-[#252525] border border-neutral-200 dark:border-neutral-700 shadow-2xl p-1.5 z-50 text-xs">
-                          {["Claude 3.7 Sonnet", "Gemini 3.6 Flash", "DeepSeek R1", "GPT-4.5", "o3-mini"].map((m) => (
-                            <button
-                              key={m}
-                              onClick={() => {
-                                setAiSelectedModel(m);
-                                setAiModelDropdownOpen(false);
-                              }}
-                              className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between cursor-pointer ${
-                                aiSelectedModel === m
-                                  ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-semibold"
-                                  : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60"
-                              }`}
-                            >
-                              <span>{m}</span>
-                              {aiSelectedModel === m && <Check className="w-3.5 h-3.5 text-emerald-500" />}
-                            </button>
-                          ))}
+                        <div className="absolute left-0 top-full mt-1.5 w-72 rounded-xl bg-white dark:bg-[#222222] border border-neutral-200 dark:border-neutral-800 shadow-2xl z-[9999] overflow-hidden">
+                          <div className="p-2 border-b border-black/[0.06] dark:border-white/[0.06]">
+                            <div className="relative">
+                              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" />
+                              <input
+                                type="text"
+                                value={aiModelSearch}
+                                onChange={(e) => setAiModelSearch(e.target.value)}
+                                placeholder="Search available models..."
+                                className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] outline-hidden text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400"
+                                autoFocus
+                              />
+                            </div>
+                          </div>
+
+                          <div className="max-h-60 overflow-y-auto p-1.5 space-y-0.5">
+                            {([
+                              { name: "Claude Opus 5", provider: "Anthropic", desc: "Top-Tier Agentic Reasoning & Code", icon: Sparkles },
+                              { name: "GPT-5.6 Sol", provider: "OpenAI", desc: "Flagship Maximum Reasoning", icon: Cpu },
+                              { name: "GPT-5.6 Terra", provider: "OpenAI", desc: "Balanced Everyday Intelligence", icon: Brain },
+                              { name: "GPT-5.6 Luna", provider: "OpenAI", desc: "High-Speed Cost-Effective", icon: Zap },
+                              { name: "Gemini 3.7 Flash", provider: "Google", desc: "Ultra Fast 1M Context Workhorse", icon: Zap },
+                              { name: "DeepSeek R2", provider: "DeepSeek", desc: "800B MoE Open Reasoning Chain", icon: Brain },
+                              { name: "Claude Sonnet 5", provider: "Anthropic", desc: "Fast Hybrid Coding & Analysis", icon: Code2 },
+                              { name: "o3-pro", provider: "OpenAI", desc: "Extended Math & Code Reasoning", icon: Code2 },
+                            ] as const).filter((m) => {
+                              if (!aiModelSearch.trim()) return true;
+                              const q = aiModelSearch.toLowerCase();
+                              return m.name.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q);
+                            }).map((m) => {
+                              const isSelected = aiSelectedModel === m.name;
+                              return (
+                                <button
+                                  key={m.name}
+                                  onClick={() => {
+                                    setAiSelectedModel(m.name);
+                                    setAiModelDropdownOpen(false);
+                                  }}
+                                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                                    isSelected
+                                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
+                                      : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 truncate">
+                                    <m.icon className="w-3.5 h-3.5 shrink-0 text-current" />
+                                    <div className="flex flex-col text-left truncate">
+                                      <span className="truncate">{m.name}</span>
+                                      <span className={`text-[10px] truncate ${isSelected ? "opacity-75" : "text-neutral-400"}`}>
+                                        {m.provider} • {m.desc}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-current ml-1" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="p-1.5 border-t border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]">
+                            <div className="w-full flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-500 dark:text-neutral-400 gap-1.5">
+                              <SettingsIcon className="w-3.5 h-3.5 text-neutral-400" />
+                              <span>Configure API Keys in Settings</span>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1532,10 +1582,10 @@ export default function AgenticSolutionsPanel() {
               : currentLayout === 'leet' || currentLayout === 'note-taking' || currentLayout === 'debug'
               ? 'lg:col-span-5'
               : 'lg:col-span-6'
-          } flex flex-col gap-2.5`}>
+          } flex flex-col h-full gap-2.5 overflow-hidden`}>
             
             {/* CODE / NOTE EDITOR PANEL */}
-            <div className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-xs overflow-hidden flex flex-col justify-between">
+            <div className="h-[380px] shrink-0 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-xs overflow-hidden flex flex-col justify-between">
               
               {/* Tab Bar - Exact LeetCode style: </> Code + Optional Note tab right next to it */}
               <div
@@ -1671,7 +1721,7 @@ export default function AgenticSolutionsPanel() {
                   </div>
 
                   {/* Monaco Code Syntax Area */}
-                  <div className="p-3 bg-white dark:bg-[#1a1a1a] font-mono text-xs overflow-x-auto flex-1">
+                  <div className="p-3 bg-white dark:bg-[#1a1a1a] font-mono text-xs overflow-y-auto overflow-x-auto flex-1">
                     <div className="flex leading-[21px]">
                       <div className="select-none text-[#237893] dark:text-[#569cd6] pr-4 text-right opacity-70">
                         {displayedCodeLines.map((_, i) => (
@@ -1832,9 +1882,9 @@ export default function AgenticSolutionsPanel() {
             </div>
 
             {/* TESTCASE / TEST RESULT CONSOLE */}
-            <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-xs overflow-hidden flex flex-col justify-between">
+            <div className="flex-1 min-h-0 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-xs overflow-hidden flex flex-col justify-between">
               
-              <div className="h-9 px-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center gap-4 text-xs select-none">
+              <div className="h-9 px-3 shrink-0 border-b border-neutral-200 dark:border-neutral-800 flex items-center gap-4 text-xs select-none">
                 <button
                   onClick={() => setActiveConsoleTab("testcase")}
                   className={`flex items-center gap-1.5 font-medium transition-colors cursor-pointer ${
@@ -1860,7 +1910,7 @@ export default function AgenticSolutionsPanel() {
                 </button>
               </div>
 
-              <div className="p-4 space-y-3 font-mono text-xs">
+              <div className="p-4 space-y-3 font-mono text-xs flex-1 overflow-y-auto">
                 {activeConsoleTab === "testcase" ? (
                   <>
                     <div className="flex items-center gap-2">
@@ -1968,7 +2018,7 @@ export default function AgenticSolutionsPanel() {
 
           {/* COLUMN 3: 3RD COLUMN FOR LEET / NOTE-TAKING / DEBUG LAYOUTS */}
           {(currentLayout === 'leet' || currentLayout === 'note-taking' || currentLayout === 'debug') && (
-            <div className="lg:col-span-3 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-xs flex flex-col justify-between text-xs overflow-hidden">
+            <div className="lg:col-span-3 h-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1a1a1a] shadow-xs flex flex-col justify-between text-xs overflow-hidden">
               
               <div className="h-9 px-3 border-b border-neutral-200 dark:border-neutral-800 bg-[rgba(0,0,0,0.02)] dark:bg-[rgba(255,255,255,0.02)] flex items-center justify-between select-none">
                 <div className="flex items-center gap-1.5 font-medium text-neutral-900 dark:text-white">

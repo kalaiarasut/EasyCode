@@ -264,29 +264,58 @@ const QUICK_ACTIONS = [
   { label: "System Design", icon: Settings, prompt: "Design a distributed real-time code execution sandbox like Judge0 with Redis queuing" },
 ];
 
-const TRENDING_PROMPTS = [
-  "Create a Hard Dynamic Programming challenge on grid path optimization with obstacle costs",
-  "Generate a Graph Shortest Path problem with dynamic obstacle weights and teleportation portals",
-  "Design a custom Trie-based autocomplete problem with real-time prefix frequency ranking",
-  "Construct an Interactive Binary Search problem with real-world floating point precision edge cases",
-  "Build a Monotonic Stack problem for stock price span with daily volume weighting",
-  "Generate a Two-Pointer challenge for trapping rain water with variable container widths",
-];
+const CATEGORY_PROMPTS: Record<string, string[]> = {
+  "Generate Problem": [
+    "Create a Hard Dynamic Programming challenge on grid path optimization with obstacle costs",
+    "Generate a Graph Shortest Path problem with dynamic obstacle weights and teleportation portals",
+    "Design a custom Trie-based autocomplete problem with real-time prefix frequency ranking",
+    "Construct an Interactive Binary Search problem with real-world floating point precision edge cases",
+  ],
+  "Explain Algorithm": [
+    "Explain Dijkstra's algorithm with priority queue relaxation and step-by-step visual diagrams",
+    "Deep-dive into Monotonic Stack mechanics with Next Greater Element visual state traces",
+    "Explain Red-Black Tree balancing rules with left/right color rotation step walkthroughs",
+    "Break down A* pathfinding heuristic calculations compared to standard Breadth-First Search",
+  ],
+  "Test Cases & Edge Cases": [
+    "Generate adversarial stress-test cases for sliding window maximum with large duplicates",
+    "Construct edge cases for Graph Cycle Detection including self-loops and disconnected components",
+    "Build comprehensive boundary test suites for 64-bit integer overflow and empty arrays",
+    "Create fuzzing test inputs for Interval Merging with nested and zero-length ranges",
+  ],
+  "Optimize Time & Space": [
+    "Optimize 2-Sum problem from quadratic O(N²) brute force to single-pass linear O(N) hash map",
+    "Refactor Recursive Fibonacci with memoization and O(1) space matrix exponentiation",
+    "Reduce Space Complexity of Longest Common Subsequence from 2D O(M×N) to 1D O(min(M,N))",
+    "Optimize Prime Factorization from trial division O(√N) to Sieve of Eratosthenes O(N log log N)",
+  ],
+  "System Design": [
+    "Design a distributed real-time code execution sandbox like Judge0 with Redis job queuing",
+    "Architect an ultra low-latency Global Leaderboard system using Redis Sorted Sets and Sharding",
+    "Design a scalable URL Shortener with 100K QPS, write-ahead logging, and distributed caching",
+    "Architect a real-time collaborative code editor with Operational Transformation (OT) / CRDTs",
+  ],
+};
 
 const AVAILABLE_MODELS = [
-  { name: "Claude 3.7 Sonnet", provider: "Anthropic • Hybrid SOTA Reasoning", badge: "Reasoning", icon: Sparkles },
-  { name: "Gemini 3.6 Flash", provider: "Google • Ultra Fast 1M Context", badge: "Fast", icon: Zap },
-  { name: "DeepSeek R1", provider: "DeepSeek • 671B MoE Open Reasoning", badge: "Thinking", icon: Brain },
-  { name: "GPT-4.5", provider: "OpenAI • Frontier Flagship Model", badge: "Flagship", icon: Cpu },
-  { name: "o3-mini", provider: "OpenAI • Fast Math & Code Reasoning", badge: "Math/Code", icon: Code2 },
+  { name: "Claude Opus 5", provider: "Anthropic", desc: "Top-Tier Agentic Reasoning & Code", badge: "Reasoning", icon: Sparkles },
+  { name: "GPT-5.6 Sol", provider: "OpenAI", desc: "Flagship Maximum Reasoning", badge: "Flagship", icon: Cpu },
+  { name: "GPT-5.6 Terra", provider: "OpenAI", desc: "Balanced Everyday Intelligence", badge: "Balanced", icon: Brain },
+  { name: "GPT-5.6 Luna", provider: "OpenAI", desc: "High-Speed Cost-Effective", badge: "Fast", icon: Zap },
+  { name: "Gemini 3.7 Flash", provider: "Google", desc: "Ultra Fast 1M Context Workhorse", badge: "Speed", icon: Zap },
+  { name: "DeepSeek R2", provider: "DeepSeek", desc: "800B MoE Open Reasoning Chain", badge: "Thinking", icon: Brain },
+  { name: "Claude Sonnet 5", provider: "Anthropic", desc: "Fast Hybrid Coding & Analysis", badge: "Code", icon: Code2 },
+  { name: "o3-pro", provider: "OpenAI", desc: "Extended Math & Code Reasoning", badge: "Math/Code", icon: Code2 },
 ];
 
 const AVAILABLE_MEDIA_MODELS = [
-  { name: "FLUX.1 Schnell", type: "Image", provider: "Black Forest Labs • Photorealism", icon: ImageIcon },
-  { name: "Kling 1.5 Video AI", type: "Video", provider: "Kuaishou • High-Def Video Synthesis", icon: Film },
-  { name: "Runway Gen-3 Video", type: "Video", provider: "Runway • Cinematic Motion Model", icon: Video },
-  { name: "Vector SVG Studio", type: "Vector", provider: "EasyCode • Precision Vector Diagrams", icon: FileCode },
-  { name: "Mermaid Flow Engine", type: "Diagram", provider: "Mermaid.js • Architecture Diagrams", icon: Network },
+  { name: "ChatGPT Images 2.0", type: "Image", provider: "OpenAI", desc: "Photorealistic Compositional Imagery", icon: ImageIcon },
+  { name: "Midjourney v7", type: "Image", provider: "Midjourney", desc: "Editorial & Artistic Quality", icon: Wand2 },
+  { name: "Claude Design", type: "Image", provider: "Anthropic", desc: "Brand-Consistent Generative Design", icon: Layers },
+  { name: "Google Veo 3.1", type: "Video", provider: "Google", desc: "Photorealistic Video Generation", icon: Film },
+  { name: "Seedance 2.0", type: "Video", provider: "ByteDance", desc: "Cinematic Multi-Shot Narrative", icon: Video },
+  { name: "FLUX.1 Schnell", type: "Image", provider: "Black Forest Labs", desc: "Ultra-Fast Image Synthesis", icon: ImageIcon },
+  { name: "Runway Gen-3 Alpha", type: "Video", provider: "Runway", desc: "Cinematic Motion Control", icon: Film },
 ];
 
 export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void }) {
@@ -311,14 +340,43 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
 
   // Interactive Prompt Box State
   const [customInput, setCustomInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState("Claude 3.7 Sonnet");
-  const [selectedMediaEngine, setSelectedMediaEngine] = useState("FLUX.1 Schnell");
+  const [selectedModel, setSelectedModel] = useState("Claude Opus 5");
+  const [selectedMediaEngine, setSelectedMediaEngine] = useState("ChatGPT Images 2.0");
   const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("Generate Problem");
 
-  // Dropdown open states
-  const [isModelOpen, setIsModelOpen] = useState(false);
-  const [isMediaOpen, setIsMediaOpen] = useState(false);
+  // Dropdown open states — header vs toolbar isolated
+  const [isHeaderModelOpen, setIsHeaderModelOpen] = useState(false);
+  const [isToolbarModelOpen, setIsToolbarModelOpen] = useState(false);
+  const [isToolbarMediaOpen, setIsToolbarMediaOpen] = useState(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
+  const [mediaSearch, setMediaSearch] = useState("");
+  // Generated chat session model states
+  const [genChatModelOpen, setGenChatModelOpen] = useState(false);
+  const [genChatMediaOpen, setGenChatMediaOpen] = useState(false);
+  const [genChatModelSearch, setGenChatModelSearch] = useState("");
+
+  const closeAllDropdowns = () => {
+    setIsHeaderModelOpen(false);
+    setIsToolbarModelOpen(false);
+    setIsToolbarMediaOpen(false);
+    setIsPlusMenuOpen(false);
+    setGenChatModelOpen(false);
+    setGenChatMediaOpen(false);
+  };
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && !target.closest("[data-dropdown-container]")) {
+        closeAllDropdowns();
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const activeSession = SESSIONS.find((s) => s.id === activeSessionId) || SESSIONS[0];
 
@@ -600,9 +658,15 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
               <span className="text-[#C5C2BA] dark:text-[#524E48] mx-1">/</span>
 
               {/* Model breadcrumb pill */}
-              <div className="relative">
+              <div className="relative" data-dropdown-container="true">
                 <button
-                  onClick={() => setIsModelOpen(!isModelOpen)}
+                  type="button"
+                  onClick={() => {
+                    const next = !isHeaderModelOpen;
+                    closeAllDropdowns();
+                    setIsHeaderModelOpen(next);
+                    setModelSearch("");
+                  }}
                   className="flex items-center gap-1.5 text-xs font-medium text-[#7A756C] dark:text-[#A8A49D] hover:text-black dark:hover:text-white transition-colors cursor-pointer px-2 py-1 rounded-md hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
@@ -610,35 +674,66 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
                   <ChevronDown className="w-3 h-3 opacity-60" />
                 </button>
 
-                {/* Model Dropdown Menu */}
-                {isModelOpen && (
-                  <div className="absolute left-0 top-full mt-1.5 w-64 rounded-xl bg-white dark:bg-[#282624] border border-[#DFDAD0] dark:border-[#383532] shadow-xl p-1.5 z-50 text-xs">
-                    <div className="px-2.5 py-1 text-[10px] uppercase font-bold text-neutral-400">Select Reasoning Model</div>
-                    {AVAILABLE_MODELS.map((m) => (
-                      <button
-                        key={m.name}
-                        onClick={() => {
-                          setSelectedModel(m.name);
-                          setIsModelOpen(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
-                          selectedModel === m.name
-                            ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-semibold"
-                            : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <m.icon className="w-3.5 h-3.5 text-amber-500" />
-                          <div>
-                            <div>{m.name}</div>
-                            <div className="text-[10px] text-neutral-400 font-normal">{m.provider}</div>
-                          </div>
+                {/* Model Dropdown Menu - Exact ProblemPageAiTab Replica */}
+                {isHeaderModelOpen && (
+                  <div className="absolute left-0 top-full mt-1.5 w-72 rounded-xl bg-white dark:bg-[#222222] border border-neutral-200 dark:border-neutral-800 shadow-2xl z-[9999] overflow-hidden">
+                    <div className="p-2 border-b border-black/[0.06] dark:border-white/[0.06]">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" />
+                        <input
+                          type="text"
+                          value={modelSearch}
+                          onChange={(e) => setModelSearch(e.target.value)}
+                          placeholder="Search available models..."
+                          className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] outline-hidden text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto p-1.5 space-y-0.5">
+                      {AVAILABLE_MODELS.filter((m) => {
+                        if (!modelSearch.trim()) return true;
+                        const q = modelSearch.toLowerCase();
+                        return m.name.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q);
+                      }).map((m) => {
+                        const isSelected = selectedModel === m.name;
+                        return (
+                          <button
+                            key={m.name}
+                            onClick={() => {
+                              setSelectedModel(m.name);
+                              setIsHeaderModelOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                              isSelected
+                                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
+                                : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <m.icon className="w-3.5 h-3.5 shrink-0 text-current" />
+                              <div className="flex flex-col text-left truncate">
+                                <span className="truncate">{m.name}</span>
+                                <span className={`text-[10px] truncate ${isSelected ? "opacity-75" : "text-neutral-400"}`}>
+                                  {m.provider} • {m.desc}
+                                </span>
+                              </div>
+                            </div>
+                            {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-current ml-1" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="p-1.5 border-t border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]">
+                      <div className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                        <div className="flex items-center gap-1.5">
+                          <Settings className="w-3.5 h-3.5 text-neutral-400" />
+                          <span>Configure API Keys in Settings</span>
                         </div>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/[0.05] dark:bg-white/[0.08] font-mono">
-                          {m.badge}
-                        </span>
-                      </button>
-                    ))}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -792,8 +887,8 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
                     </div>
 
                     {/* ─── REAL USER-TYPEABLE PROMPT INPUT BOX ─── */}
-                    <div className="w-full max-w-[620px]">
-                      <form onSubmit={handleCustomSubmit} className="rounded-2xl border border-[#DFDAD0] dark:border-[#383532] bg-white dark:bg-[#282624] shadow-lg overflow-hidden">
+                    <div className="w-full max-w-[620px] relative z-20">
+                      <form onSubmit={handleCustomSubmit} className="rounded-2xl border border-[#DFDAD0] dark:border-[#383532] bg-white dark:bg-[#282624] shadow-lg relative">
                         {/* Web Search Active Pill */}
                         <div className="px-4 pt-3 pb-1 flex items-center justify-between">
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] text-[11px] text-[#524E48] dark:text-[#A8A49D]">
@@ -840,17 +935,21 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
                         <div className="px-3 pb-3 pt-1 flex items-center justify-between gap-2 border-t border-black/[0.04] dark:border-white/[0.04] select-none">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {/* + Attachment Menu */}
-                            <div className="relative">
+                            <div className="relative" data-dropdown-container="true">
                               <button
                                 type="button"
-                                onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
+                                onClick={() => {
+                                  const next = !isPlusMenuOpen;
+                                  closeAllDropdowns();
+                                  setIsPlusMenuOpen(next);
+                                }}
                                 className="w-8 h-8 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#1C1B19] dark:text-neutral-300 flex items-center justify-center cursor-pointer shadow-2xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
                               >
                                 <Plus className="w-4 h-4" />
                               </button>
 
                               {isPlusMenuOpen && (
-                                <div className="absolute left-0 bottom-full mb-2 w-52 rounded-xl bg-white dark:bg-[#282624] border border-[#DFDAD0] dark:border-[#383532] shadow-xl p-1.5 z-50 text-xs">
+                                <div className="absolute left-0 bottom-full mb-2 w-52 rounded-xl bg-white dark:bg-[#282624] border border-[#DFDAD0] dark:border-[#383532] shadow-xl p-1.5 z-[9999] text-xs">
                                   <button
                                     type="button"
                                     onClick={() => setIsPlusMenuOpen(false)}
@@ -880,10 +979,15 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
                             </div>
 
                             {/* Reasoning Model Selection UI */}
-                            <div className="relative">
+                            <div className="relative" data-dropdown-container="true">
                               <button
                                 type="button"
-                                onClick={() => setIsModelOpen(!isModelOpen)}
+                                onClick={() => {
+                                  const next = !isToolbarModelOpen;
+                                  closeAllDropdowns();
+                                  setIsToolbarModelOpen(next);
+                                  setModelSearch("");
+                                }}
                                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs font-medium cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
                               >
                                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
@@ -891,44 +995,78 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
                                 <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
                               </button>
 
-                              {isModelOpen && (
-                                <div className="absolute left-0 bottom-full mb-2 w-64 rounded-xl bg-white dark:bg-[#282624] border border-[#DFDAD0] dark:border-[#383532] shadow-xl p-1.5 z-50 text-xs">
-                                  <div className="px-2.5 py-1 text-[10px] uppercase font-bold text-neutral-400">Select Reasoning Model</div>
-                                  {AVAILABLE_MODELS.map((m) => (
-                                    <button
-                                      key={m.name}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedModel(m.name);
-                                        setIsModelOpen(false);
-                                      }}
-                                      className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
-                                        selectedModel === m.name
-                                          ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-semibold"
-                                          : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60"
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <m.icon className="w-3.5 h-3.5 text-amber-500" />
-                                        <div>
-                                          <div>{m.name}</div>
-                                          <div className="text-[10px] text-neutral-400 font-normal">{m.provider}</div>
-                                        </div>
-                                      </div>
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/[0.05] dark:bg-white/[0.08] font-mono">
-                                        {m.badge}
-                                      </span>
-                                    </button>
-                                  ))}
+                              {isToolbarModelOpen && (
+                                <div className="absolute left-0 bottom-full mb-2 w-72 rounded-xl bg-white dark:bg-[#222222] border border-neutral-200 dark:border-neutral-800 shadow-2xl z-[9999] overflow-hidden text-xs">
+                                  <div className="p-2 border-b border-black/[0.06] dark:border-white/[0.06]">
+                                    <div className="relative">
+                                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" />
+                                      <input
+                                        type="text"
+                                        value={modelSearch}
+                                        onChange={(e) => setModelSearch(e.target.value)}
+                                        placeholder="Search available models..."
+                                        className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] outline-hidden text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400"
+                                        autoFocus
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {AVAILABLE_MODELS.filter((m) => {
+                                      if (!modelSearch.trim()) return true;
+                                      const q = modelSearch.toLowerCase();
+                                      return m.name.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q);
+                                    }).map((m) => {
+                                      const isSelected = selectedModel === m.name;
+                                      return (
+                                        <button
+                                          key={m.name}
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedModel(m.name);
+                                            closeAllDropdowns();
+                                          }}
+                                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                                            isSelected
+                                              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
+                                              : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2 truncate">
+                                            <m.icon className="w-3.5 h-3.5 shrink-0 text-current" />
+                                            <div className="flex flex-col text-left truncate">
+                                              <span className="truncate">{m.name}</span>
+                                              <span className={`text-[10px] truncate ${isSelected ? "opacity-75" : "text-neutral-400"}`}>
+                                                {m.provider} • {m.desc}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-current ml-1" />}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  <div className="p-1.5 border-t border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]">
+                                    <div className="w-full flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-500 dark:text-neutral-400 gap-1.5">
+                                      <Settings className="w-3.5 h-3.5 text-neutral-400" />
+                                      <span>Configure API Keys in Settings</span>
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>
 
                             {/* Image & Video Selection UI Model */}
-                            <div className="relative hidden sm:block">
+                            <div className="relative hidden sm:block" data-dropdown-container="true">
                               <button
                                 type="button"
-                                onClick={() => setIsMediaOpen(!isMediaOpen)}
+                                onClick={() => {
+                                  const next = !isToolbarMediaOpen;
+                                  closeAllDropdowns();
+                                  setIsToolbarMediaOpen(next);
+                                  setMediaSearch("");
+                                }}
                                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs font-medium cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
                               >
                                 <Film className="w-3.5 h-3.5 text-purple-500" />
@@ -936,35 +1074,57 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
                                 <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
                               </button>
 
-                              {isMediaOpen && (
-                                <div className="absolute left-0 bottom-full mb-2 w-60 rounded-xl bg-white dark:bg-[#282624] border border-[#DFDAD0] dark:border-[#383532] shadow-xl p-1.5 z-50 text-xs">
-                                  <div className="px-2.5 py-1 text-[10px] uppercase font-bold text-neutral-400">Image & Video Model</div>
-                                  {AVAILABLE_MEDIA_MODELS.map((eng) => (
-                                    <button
-                                      key={eng.name}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedMediaEngine(eng.name);
-                                        setIsMediaOpen(false);
-                                      }}
-                                      className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
-                                        selectedMediaEngine === eng.name
-                                          ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-semibold"
-                                          : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60"
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <eng.icon className="w-3.5 h-3.5 text-purple-500" />
-                                        <div>
-                                          <div>{eng.name}</div>
-                                          <div className="text-[10px] text-neutral-400 font-normal">{eng.provider}</div>
-                                        </div>
-                                      </div>
-                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 font-mono">
-                                        {eng.type}
-                                      </span>
-                                    </button>
-                                  ))}
+                              {isToolbarMediaOpen && (
+                                <div className="absolute left-0 bottom-full mb-2 w-76 rounded-xl bg-white dark:bg-[#222222] border border-neutral-200 dark:border-neutral-800 shadow-2xl z-[9999] overflow-hidden text-xs">
+                                  <div className="p-2 border-b border-black/[0.06] dark:border-white/[0.06]">
+                                    <div className="relative">
+                                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" />
+                                      <input
+                                        type="text"
+                                        value={mediaSearch}
+                                        onChange={(e) => setMediaSearch(e.target.value)}
+                                        placeholder="Search media engines..."
+                                        className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] outline-hidden text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400"
+                                        autoFocus
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {AVAILABLE_MEDIA_MODELS.filter((eng) => {
+                                      if (!mediaSearch.trim()) return true;
+                                      const q = mediaSearch.toLowerCase();
+                                      return eng.name.toLowerCase().includes(q) || eng.provider.toLowerCase().includes(q) || eng.desc.toLowerCase().includes(q) || eng.type.toLowerCase().includes(q);
+                                    }).map((eng) => {
+                                      const isSelected = selectedMediaEngine === eng.name;
+                                      return (
+                                        <button
+                                          key={eng.name}
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedMediaEngine(eng.name);
+                                            closeAllDropdowns();
+                                          }}
+                                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                                            isSelected
+                                              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
+                                              : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2 truncate">
+                                            <eng.icon className="w-3.5 h-3.5 shrink-0 text-current" />
+                                            <div className="flex flex-col text-left truncate">
+                                              <span className="truncate">{eng.name}</span>
+                                              <span className={`text-[10px] truncate ${isSelected ? "opacity-75" : "text-neutral-400"}`}>
+                                                {eng.provider} • {eng.desc}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-current ml-1" />}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -997,37 +1157,42 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
                       </form>
                     </div>
 
-                    {/* Quick Action Pills */}
+                    {/* Quick Action Pills (Category Tabs) */}
                     <div className="flex items-center gap-2 flex-wrap justify-center select-none">
-                      {QUICK_ACTIONS.map((qa) => (
-                        <button
-                          key={qa.label}
-                          type="button"
-                          onClick={() => setCustomInput(qa.prompt)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border cursor-pointer transition-colors bg-white/60 dark:bg-white/[0.04] text-[#524E48] dark:text-[#A8A49D] border-[#DFDAD0] dark:border-[#383532] hover:bg-black/[0.03] dark:hover:bg-white/[0.06]"
-                        >
-                          <qa.icon className="w-3 h-3 text-amber-500" />
-                          <span>{qa.label}</span>
-                        </button>
-                      ))}
+                      {QUICK_ACTIONS.map((qa) => {
+                        const isSelected = activeCategory === qa.label;
+                        return (
+                          <button
+                            key={qa.label}
+                            type="button"
+                            onClick={() => {
+                              setActiveCategory(qa.label);
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border cursor-pointer transition-all ${
+                              isSelected
+                                ? "bg-amber-500/15 border-amber-500/40 text-amber-800 dark:text-amber-300 font-semibold shadow-2xs"
+                                : "bg-white/60 dark:bg-white/[0.04] text-[#524E48] dark:text-[#A8A49D] border-[#DFDAD0] dark:border-[#383532] hover:bg-black/[0.03] dark:hover:bg-white/[0.06]"
+                            }`}
+                          >
+                            <qa.icon className={`w-3 h-3 ${isSelected ? "text-amber-600 dark:text-amber-400" : "text-amber-500"}`} />
+                            <span>{qa.label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
 
-                    {/* Trending Prompts */}
+                    {/* Trending Prompts (2 Rows x 2 Columns = 4 Prompts) */}
                     <div className="w-full max-w-[620px] space-y-3 pt-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-semibold text-[#524E48] dark:text-[#A8A49D]">Trending Generate Problem Prompts</span>
-                        <span className="text-[#B5B0A7] dark:text-[#524E48] text-[10px]">Click to run</span>
+                        <span className="font-semibold text-[#524E48] dark:text-[#A8A49D]">Trending {activeCategory} Prompts</span>
+                        <span className="text-[#B5B0A7] dark:text-[#524E48] text-[10px]">Click to add to prompt</span>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {TRENDING_PROMPTS.map((prompt, idx) => (
+                        {(CATEGORY_PROMPTS[activeCategory] || CATEGORY_PROMPTS["Generate Problem"]).map((prompt, idx) => (
                           <div
                             key={idx}
                             onClick={() => {
                               setCustomInput(prompt);
-                              setTypedPrompt(prompt);
-                              setIsPromptDone(true);
-                              setPhase("thinking");
-                              setIsThinkingOpen(true);
                             }}
                             className="px-3 py-2.5 rounded-xl border border-[#DFDAD0] dark:border-[#383532] bg-white/50 dark:bg-white/[0.02] text-[11px] text-[#524E48] dark:text-[#A8A49D] leading-snug hover:bg-white dark:hover:bg-white/[0.06] hover:border-amber-500/40 transition-all cursor-pointer shadow-2xs"
                           >
@@ -1319,8 +1484,8 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
                     </div>
 
                     {/* ─── FLOATING PROMPT BOX AT BOTTOM ─── */}
-                    <div className="p-3 sm:p-4 bg-[#FBF9F4] dark:bg-[#1C1B19] border-t border-[#DFDAD0] dark:border-[#2D2A26]">
-                      <form onSubmit={handleCustomSubmit} className="rounded-2xl border border-[#DFDAD0] dark:border-[#383532] bg-[#ECE8DF] dark:bg-[#282624] p-3 shadow-xs">
+                    <div className="p-3 sm:p-4 bg-[#FBF9F4] dark:bg-[#1C1B19] border-t border-[#DFDAD0] dark:border-[#2D2A26] relative z-20">
+                      <form onSubmit={handleCustomSubmit} className="rounded-2xl border border-[#DFDAD0] dark:border-[#383532] bg-[#ECE8DF] dark:bg-[#282624] p-3 shadow-xs relative">
                         <input
                           type="text"
                           value={customInput}
@@ -1329,28 +1494,202 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
                           className="w-full bg-transparent border-none outline-hidden text-xs text-[#1C1B19] dark:text-[#EDEDEB] placeholder:text-[#8C877D] dark:placeholder:text-[#736F68] px-1 pb-2"
                         />
 
-                        <div className="pt-2 border-t border-black/[0.04] dark:border-white/[0.04] flex items-center justify-between gap-2">
+                        <div className="pt-2 border-t border-black/[0.04] dark:border-white/[0.04] flex items-center justify-between gap-2 select-none">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
-                              className="w-8 h-8 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#1C1B19] dark:text-neutral-300 flex items-center justify-center cursor-pointer shadow-2xs"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
+                            {/* + Attachment Menu */}
+                            <div className="relative" data-dropdown-container="true">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = !isPlusMenuOpen;
+                                  closeAllDropdowns();
+                                  setIsPlusMenuOpen(next);
+                                }}
+                                className="w-8 h-8 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#1C1B19] dark:text-neutral-300 flex items-center justify-center cursor-pointer shadow-2xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
 
-                            {/* Reasoning Model pill */}
-                            <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs font-medium cursor-pointer">
-                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                              <span>{selectedModel}</span>
-                              <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
+                              {isPlusMenuOpen && (
+                                <div className="absolute left-0 bottom-full mb-2 w-52 rounded-xl bg-white dark:bg-[#282624] border border-[#DFDAD0] dark:border-[#383532] shadow-xl p-1.5 z-[9999] text-xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsPlusMenuOpen(false)}
+                                    className="w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 cursor-pointer"
+                                  >
+                                    <Paperclip className="w-3.5 h-3.5" />
+                                    <span>Upload Code / File</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsPlusMenuOpen(false)}
+                                    className="w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 cursor-pointer"
+                                  >
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                    <span>Image Reference</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsPlusMenuOpen(false)}
+                                    className="w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 cursor-pointer"
+                                  >
+                                    <Code2 className="w-3.5 h-3.5" />
+                                    <span>System Instructions</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Reasoning Model Selection UI */}
+                            <div className="relative" data-dropdown-container="true">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = !genChatModelOpen;
+                                  closeAllDropdowns();
+                                  setGenChatModelOpen(next);
+                                  setGenChatModelSearch("");
+                                }}
+                                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs font-medium cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                              >
+                                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                                <span>{selectedModel}</span>
+                                <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
+                              </button>
+
+                              {genChatModelOpen && (
+                                <div className="absolute left-0 bottom-full mb-2 w-72 rounded-xl bg-white dark:bg-[#222222] border border-neutral-200 dark:border-neutral-800 shadow-2xl z-[9999] overflow-hidden text-xs">
+                                  <div className="p-2 border-b border-black/[0.06] dark:border-white/[0.06]">
+                                    <div className="relative">
+                                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" />
+                                      <input
+                                        type="text"
+                                        value={genChatModelSearch}
+                                        onChange={(e) => setGenChatModelSearch(e.target.value)}
+                                        placeholder="Search available models..."
+                                        className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] outline-hidden text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400"
+                                        autoFocus
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {AVAILABLE_MODELS.filter((m) => {
+                                      if (!genChatModelSearch.trim()) return true;
+                                      const q = genChatModelSearch.toLowerCase();
+                                      return m.name.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q);
+                                    }).map((m) => {
+                                      const isSelected = selectedModel === m.name;
+                                      return (
+                                        <button
+                                          key={m.name}
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedModel(m.name);
+                                            closeAllDropdowns();
+                                          }}
+                                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                                            isSelected
+                                              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
+                                              : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2 truncate">
+                                            <m.icon className="w-3.5 h-3.5 shrink-0 text-current" />
+                                            <div className="flex flex-col text-left truncate">
+                                              <span className="truncate">{m.name}</span>
+                                              <span className={`text-[10px] truncate ${isSelected ? "opacity-75" : "text-neutral-400"}`}>
+                                                {m.provider} • {m.desc}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-current ml-1" />}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  <div className="p-1.5 border-t border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]">
+                                    <div className="w-full flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-500 dark:text-neutral-400 gap-1.5">
+                                      <Settings className="w-3.5 h-3.5 text-neutral-400" />
+                                      <span>Configure API Keys in Settings</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
                             {/* Image & Video Engine pill */}
-                            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs">
-                              <Film className="w-3.5 h-3.5 text-purple-500" />
-                              <span>{selectedMediaEngine}</span>
-                            </span>
+                            <div className="relative hidden sm:block" data-dropdown-container="true">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = !genChatMediaOpen;
+                                  closeAllDropdowns();
+                                  setGenChatMediaOpen(next);
+                                  setMediaSearch("");
+                                }}
+                                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/70 dark:bg-white/[0.04] text-[#1C1B19] dark:text-[#EDEDEB] shadow-2xs font-medium cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                              >
+                                <Film className="w-3.5 h-3.5 text-purple-500" />
+                                <span>{selectedMediaEngine}</span>
+                                <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
+                              </button>
+
+                              {genChatMediaOpen && (
+                                <div className="absolute left-0 bottom-full mb-2 w-76 rounded-xl bg-white dark:bg-[#222222] border border-neutral-200 dark:border-neutral-800 shadow-2xl z-[9999] overflow-hidden text-xs">
+                                  <div className="p-2 border-b border-black/[0.06] dark:border-white/[0.06]">
+                                    <div className="relative">
+                                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" />
+                                      <input
+                                        type="text"
+                                        value={mediaSearch}
+                                        onChange={(e) => setMediaSearch(e.target.value)}
+                                        placeholder="Search media engines..."
+                                        className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] outline-hidden text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400"
+                                        autoFocus
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {AVAILABLE_MEDIA_MODELS.filter((eng) => {
+                                      if (!mediaSearch.trim()) return true;
+                                      const q = mediaSearch.toLowerCase();
+                                      return eng.name.toLowerCase().includes(q) || eng.provider.toLowerCase().includes(q) || eng.desc.toLowerCase().includes(q) || eng.type.toLowerCase().includes(q);
+                                    }).map((eng) => {
+                                      const isSelected = selectedMediaEngine === eng.name;
+                                      return (
+                                        <button
+                                          key={eng.name}
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedMediaEngine(eng.name);
+                                            closeAllDropdowns();
+                                          }}
+                                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+                                            isSelected
+                                              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-medium"
+                                              : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-neutral-700 dark:text-neutral-300"
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2 truncate">
+                                            <eng.icon className="w-3.5 h-3.5 shrink-0 text-current" />
+                                            <div className="flex flex-col text-left truncate">
+                                              <span className="truncate">{eng.name}</span>
+                                              <span className={`text-[10px] truncate ${isSelected ? "opacity-75" : "text-neutral-400"}`}>
+                                                {eng.provider} • {eng.desc}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-current ml-1" />}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-1.5">
