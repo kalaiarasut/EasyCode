@@ -644,9 +644,8 @@ export default function AgenticSolutionsPanel() {
     >
       {/* Section Header */}
       <div className="text-center space-y-3 mb-12">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] text-xs font-mono text-neutral-700 dark:text-neutral-300">
-          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span>Interactive Problem Workspace</span>
+        <div className="text-xs sm:text-[13px] font-sans font-semibold text-neutral-950 dark:text-white tracking-wide">
+          Inside the Agent
         </div>
 
         <h2 className="text-3xl sm:text-4xl md:text-5xl font-sans font-bold tracking-tight text-[#1C1B19] dark:text-[#F3F2F0]">

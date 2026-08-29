@@ -33,15 +33,15 @@ const PERSONAS = [
 
 export default function PersonaStrip() {
   return (
-    <section id="personas" className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto font-sans scroll-mt-20">
+    <section id="personas" className="pt-10 sm:pt-14 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto font-sans scroll-mt-20">
       
       {/* Section Header */}
       <div className="text-center space-y-3 mb-14">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.06] text-xs font-mono text-neutral-600 dark:text-neutral-300">
-          <span>Who It's For</span>
+        <div className="text-xs sm:text-[13px] font-sans font-semibold text-neutral-950 dark:text-white tracking-wide">
+          Who It's For
         </div>
 
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-sans font-bold tracking-tight text-neutral-900 dark:text-white">
+        <h2 className="text-3xl sm:text-4xl md:text-5xl font-sans font-bold tracking-tight text-neutral-950 dark:text-white">
           Crafted for engineers{" "}
           <br className="hidden sm:inline" />
           <span className="font-serif italic font-normal text-neutral-700 dark:text-neutral-300">

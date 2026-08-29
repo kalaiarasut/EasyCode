@@ -557,17 +557,17 @@ export default function HeroSection({ onOpenDemo }: { onOpenDemo?: () => void })
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.08] dark:border-white/[0.08] text-xs text-neutral-700 dark:text-neutral-300 font-mono shadow-2xs backdrop-blur-xs"
+          className="inline-flex items-center justify-center gap-2 text-xs sm:text-[13px] font-sans font-medium text-neutral-800 dark:text-neutral-200 tracking-wide"
         >
-          <span className="text-neutral-400 dark:text-neutral-500">—</span>
-          <span className="font-sans font-medium text-neutral-800 dark:text-neutral-200">
+          <span className="text-neutral-400 dark:text-neutral-500 font-normal">→</span>
+          <span className="font-semibold text-neutral-950 dark:text-white">
             Now in public beta
           </span>
           <span className="text-neutral-400 dark:text-neutral-500">•</span>
           <span className="text-neutral-600 dark:text-neutral-400">
             3,500+ LeetCode problems & 20+ frontier AI models
           </span>
-          <span className="text-neutral-400 dark:text-neutral-500">—</span>
+          <span className="text-neutral-400 dark:text-neutral-500 font-normal">←</span>
         </motion.div>
 
         <motion.h1
