@@ -3,6 +3,9 @@ import { codeRunValidation } from "@/schemas/codeRunSchema";
 import { runJudge0Batch } from "@/lib/judge0ApiFunction";
 import { getToken } from "next-auth/jwt";
 
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
 export async function POST(req: NextRequest) {
     const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
 

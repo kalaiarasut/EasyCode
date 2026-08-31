@@ -1,5 +1,6 @@
 import { transporter, getFromEmail } from "@/lib/nodemailer";
 import { ApiResponse } from "@/types/ApiResponse";
+import { getBaseUrl } from "@/helpers/getBaseUrl";
 
 export const sendVerificationEmail = async (
   email: string,
@@ -7,7 +8,7 @@ export const sendVerificationEmail = async (
   verifyCode: string,
   userId?: string
 ): Promise<ApiResponse> => {
-  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const baseUrl = getBaseUrl();
   const verifyUrl = `${baseUrl}/auth/confirm?${userId ? `userId=${userId}&` : ""}code=${verifyCode}&email=${encodeURIComponent(email)}`;
 
   const smtpUser = process.env.SMTP_EMAIL || process.env.EMAIL_USER || process.env.GMAIL_USER;

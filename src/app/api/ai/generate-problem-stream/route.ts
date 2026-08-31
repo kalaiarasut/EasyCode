@@ -4,6 +4,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { GeneratedProblem } from "@/types/generatedProblem";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
 async function resolveWorkingGeminiModel(
   apiKey: string,

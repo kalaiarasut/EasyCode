@@ -1,3 +1,4 @@
+import React, { Suspense } from "react";
 import AiWorkspace from "@/components/workspace/AiWorkspace";
 
 export const metadata = {
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function WorkspacePage() {
-  return <AiWorkspace />;
+  return (
+    <Suspense fallback={<div className="w-full h-screen bg-[#1C1B19]" />}>
+      <AiWorkspace />
+    </Suspense>
+  );
 }

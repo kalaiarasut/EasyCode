@@ -3,6 +3,10 @@ import { GoogleGenAI } from "@google/genai";
 import { performWebSearch } from "@/utils/webSearch";
 import { formatImageMarkdown, formatVideoMarkdown } from "@/utils/mediaGenerator";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 const MODEL_NAME_MAP: Record<string, string> = {
   "gemini-3.6-flash": "Gemini 3.6 Flash",
   "gemini-3.5-flash": "Gemini 3.5 Flash",
