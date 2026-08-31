@@ -358,6 +358,119 @@ export default function AiWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Sidebar Resizing State (Strict min: 256px, max: 500px)
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("easycode_workspace_sidebar_width") : null;
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 256 && parsed <= 500) return parsed;
+      }
+      return 256;
+    } catch (e) {
+      return 256;
+    }
+  });
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+
+  // Workspace Linear Scaling State (1.0 = 100% default, 1.12 = 112%, 1.25 = 125%)
+  const [workspaceScale, setWorkspaceScale] = useState<number>(() => {
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("easycode_workspace_scale") : null;
+      if (saved) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed >= 0.8 && parsed <= 1.5) return parsed;
+      }
+      return 1.0;
+    } catch (e) {
+      return 1.0;
+    }
+  });
+
+  // Handle sidebar mouse drag resizing
+  const handleSidebarMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingSidebar(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingSidebar) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const minWidth = 256; // Strict minimum
+      const maxWidth = Math.min(500, window.innerWidth * 0.45);
+      const newWidth = Math.max(minWidth, Math.min(maxWidth, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingSidebar(false);
+      try {
+        localStorage.setItem("easycode_workspace_sidebar_width", String(sidebarWidth));
+        if (session?.user) {
+          fetch("/api/user/preferences", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              preferences: {
+                workspaceSidebarWidth: sidebarWidth,
+              },
+            }),
+          }).catch(() => {});
+        }
+      } catch (e) {}
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [isResizingSidebar, sidebarWidth, session]);
+
+  // Listen to real-time preference changes (linear scale & cloud preferences)
+  useEffect(() => {
+    const handlePrefChange = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.workspaceScale) {
+        setWorkspaceScale(customEvent.detail.workspaceScale);
+      }
+    };
+
+    window.addEventListener("easycode-preference-change", handlePrefChange);
+
+    // Fetch cloud preferences from Supabase
+    fetch("/api/user/preferences")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.preferences) {
+          if (data.preferences.workspaceScale) {
+            const parsed = parseFloat(data.preferences.workspaceScale);
+            if (!isNaN(parsed) && parsed >= 0.8 && parsed <= 1.5) {
+              setWorkspaceScale(parsed);
+            }
+          }
+          if (data.preferences.workspaceSidebarWidth) {
+            const parsed = parseInt(data.preferences.workspaceSidebarWidth, 10);
+            if (!isNaN(parsed) && parsed >= 256 && parsed <= 500) {
+              setSidebarWidth(parsed);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      window.removeEventListener("easycode-preference-change", handlePrefChange);
+    };
+  }, []);
+
   // Load server-hosted keys dynamically
   useEffect(() => {
     fetch("/api/user/keys")
@@ -1665,7 +1778,7 @@ export default function AiWorkspace() {
         elements.push(
           <div key={`bullet-${i}`} className="flex items-start gap-2.5 pl-1 my-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 dark:bg-neutral-500 mt-2 shrink-0" />
-            <span className="flex-1 text-sm leading-relaxed text-[#242220] dark:text-[#E2DFD8]">
+            <span className="flex-1 text-[inherit] leading-relaxed text-[#242220] dark:text-[#E2DFD8]">
               {formatInlineSpans(cleanText)}
             </span>
           </div>
@@ -1679,10 +1792,10 @@ export default function AiWorkspace() {
       if (numMatch) {
         elements.push(
           <div key={`num-${i}`} className="flex items-start gap-2 pl-1 my-1.5">
-            <span className="font-mono text-xs font-semibold text-neutral-500 shrink-0 mt-0.5">
+            <span className="font-mono text-[0.85em] font-semibold text-neutral-500 shrink-0 mt-0.5">
               {numMatch[1]}.
             </span>
-            <span className="flex-1 text-sm leading-relaxed text-[#242220] dark:text-[#E2DFD8]">
+            <span className="flex-1 text-[inherit] leading-relaxed text-[#242220] dark:text-[#E2DFD8]">
               {formatInlineSpans(numMatch[2])}
             </span>
           </div>
@@ -2629,7 +2742,10 @@ export default function AiWorkspace() {
   if (!mounted) return null;
 
   return (
-    <div className="h-screen max-h-screen w-full bg-[#FBF9F4] dark:bg-[#1C1B19] text-[#1C1B19] dark:text-[#E8E6E3] flex flex-col overflow-hidden transition-colors duration-300 font-sans selection:bg-neutral-500/20">
+    <div
+      style={{ zoom: workspaceScale }}
+      className="h-screen max-h-screen w-full bg-[#FBF9F4] dark:bg-[#1C1B19] text-[#1C1B19] dark:text-[#E8E6E3] flex flex-col overflow-hidden transition-all duration-200 font-sans selection:bg-neutral-500/20"
+    >
       
       {/* Hidden dummy inputs to absorb aggressive browser autofill */}
       <input type="text" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" autoComplete="off" />
@@ -2878,8 +2994,11 @@ export default function AiWorkspace() {
       {/* BODY LAYOUT */}
       <div className="relative z-10 flex-1 flex overflow-hidden">
         
-        {/* LEFT SIDEBAR */}
-        <aside className="w-64 border-r border-[#E8E4DB] dark:border-[#2D2B28] bg-[#FBF9F4]/40 dark:bg-[#1C1B19]/40 backdrop-blur-xs flex flex-col justify-between p-3.5 shrink-0 hidden md:flex">
+        {/* LEFT SIDEBAR (Resizable with strict min width: 256px) */}
+        <aside
+          style={{ width: `${sidebarWidth}px` }}
+          className="relative border-r border-[#E8E4DB] dark:border-[#2D2B28] bg-[#FBF9F4]/40 dark:bg-[#1C1B19]/40 backdrop-blur-xs flex flex-col justify-between p-3.5 shrink-0 hidden md:flex select-none"
+        >
           
           <div className="space-y-4">
             
@@ -3023,6 +3142,25 @@ export default function AiWorkspace() {
             </span>
             <span className="text-[10px] font-mono opacity-60">v2.0</span>
           </div>
+
+          {/* Interactive Drag Handle Gutter on Right Edge */}
+          <div
+            onMouseDown={handleSidebarMouseDown}
+            onDoubleClick={() => {
+              setSidebarWidth(256);
+              localStorage.setItem("easycode_workspace_sidebar_width", "256");
+            }}
+            title="Drag to resize menu width (Double-click to reset)"
+            className="absolute -right-1.5 top-0 bottom-0 w-3 cursor-col-resize z-30 group flex items-center justify-center hover:bg-amber-500/10 active:bg-amber-500/20 transition-colors"
+          >
+            <div
+              className={`w-0.5 h-10 rounded-full transition-all duration-150 ${
+                isResizingSidebar
+                  ? "bg-amber-500 scale-y-125"
+                  : "bg-transparent group-hover:bg-amber-500/60 dark:group-hover:bg-amber-400/60"
+              }`}
+            />
+          </div>
         </aside>
 
         {/* MAIN CANVAS */}
@@ -3163,12 +3301,12 @@ export default function AiWorkspace() {
                           className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
                         >
                           <div
-                            className={`text-sm leading-relaxed ${
+                            className={`leading-relaxed ${
                               isMediaOnly
                                 ? "p-0 bg-transparent border-none shadow-none"
                                 : msg.role === "user"
-                                ? "w-fit max-w-[70%] sm:max-w-md px-4 py-2 rounded-2xl bg-[#1C1B19] text-white dark:bg-[#2A2826] dark:text-[#EDEDEB] shadow-2xs select-text"
-                                : "w-full py-2 text-[#1C1B19] dark:text-[#EDEDEB]"
+                                ? "w-fit max-w-[70%] sm:max-w-md px-4 py-2 rounded-2xl bg-[#1C1B19] text-white dark:bg-[#2A2826] dark:text-[#EDEDEB] shadow-2xs select-text text-sm"
+                                : "w-full py-2 text-[#1C1B19] dark:text-[#EDEDEB] text-sm"
                             }`}
                           >
                           {msg.generatedProblem ? (
@@ -3235,7 +3373,7 @@ export default function AiWorkspace() {
                                     e.target.style.height = "auto";
                                     e.target.style.height = `${e.target.scrollHeight}px`;
                                   }}
-                                  className="w-full bg-transparent text-white dark:text-[#EDEDEB] p-0.5 border-0 outline-none focus:outline-none focus:ring-0 text-xs sm:text-sm font-sans resize-none overflow-hidden transition-all leading-relaxed"
+                                  className="w-full bg-transparent text-white dark:text-[#EDEDEB] p-0.5 border-0 outline-none focus:outline-none focus:ring-0 font-sans resize-none overflow-hidden transition-all leading-relaxed text-sm"
                                   autoFocus
                                   onKeyDown={(e) => {
                                     const isChanged = editingText.trim() !== msg.content.trim();
@@ -3282,7 +3420,7 @@ export default function AiWorkspace() {
                               </div>
                             ) : (
                               <div className="group/user relative">
-                                <p className="whitespace-pre-wrap font-sans text-xs sm:text-sm text-white dark:text-[#EDEDEB] leading-relaxed select-text">
+                                <p className="whitespace-pre-wrap font-sans text-white dark:text-[#EDEDEB] leading-relaxed select-text text-sm">
                                   {msg.content}
                                 </p>
 

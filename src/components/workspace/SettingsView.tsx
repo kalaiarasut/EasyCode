@@ -94,6 +94,11 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
   const [preferredLanguage, setPreferredLanguage] = useState("Python");
   const [temperature, setTemperature] = useState(0.3);
 
+  // Workspace Linear Scaling State (1.0 = 100% default, 1.12 = 112%, 1.25 = 125%)
+  const [workspaceScale, setWorkspaceScale] = useState<number>(1.0);
+  const [scaleMode, setScaleMode] = useState<"small" | "medium" | "high" | "custom">("small");
+  const [customScale, setCustomScale] = useState<number>(1.0);
+
   // Model Filter & Search State
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [selectedProviderFilter, setSelectedProviderFilter] = useState("All");
@@ -273,6 +278,19 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
         setApiKeys((prev) => ({ ...prev, ...JSON.parse(savedKeys) }));
       }
 
+      const savedScale = localStorage.getItem("easycode_workspace_scale");
+      if (savedScale) {
+        const parsed = parseFloat(savedScale);
+        if (!isNaN(parsed) && parsed >= 0.8 && parsed <= 1.5) {
+          setWorkspaceScale(parsed);
+          setCustomScale(parsed);
+          if (Math.abs(parsed - 1.0) < 0.01) setScaleMode("small");
+          else if (Math.abs(parsed - 1.12) < 0.01) setScaleMode("medium");
+          else if (Math.abs(parsed - 1.25) < 0.01) setScaleMode("high");
+          else setScaleMode("custom");
+        }
+      }
+
       // Fetch server hosted env keys and user saved keys
       fetch("/api/user/keys")
         .then((res) => res.json())
@@ -283,6 +301,33 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
           if (data.success && data.keys && Object.keys(data.keys).length > 0) {
             setApiKeys((prev) => ({ ...prev, ...data.keys }));
             localStorage.setItem("easycode_custom_keys", JSON.stringify(data.keys));
+          }
+        })
+        .catch(() => {});
+
+      // Fetch cloud preferences from Supabase
+      fetch("/api/user/preferences")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.preferences) {
+            if (data.preferences.workspaceScale) {
+              const parsed = parseFloat(data.preferences.workspaceScale);
+              if (!isNaN(parsed) && parsed >= 0.8 && parsed <= 1.5) {
+                setWorkspaceScale(parsed);
+                setCustomScale(parsed);
+                if (Math.abs(parsed - 1.0) < 0.01) setScaleMode("small");
+                else if (Math.abs(parsed - 1.12) < 0.01) setScaleMode("medium");
+                else if (Math.abs(parsed - 1.25) < 0.01) setScaleMode("high");
+                else setScaleMode("custom");
+                localStorage.setItem("easycode_workspace_scale", String(parsed));
+              }
+            }
+            if (data.preferences.preferredLanguage) {
+              setPreferredLanguage(data.preferences.preferredLanguage);
+            }
+            if (data.preferences.customInstructions) {
+              setCustomInstructions(data.preferences.customInstructions);
+            }
           }
         })
         .catch(() => {});
@@ -479,13 +524,47 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
     });
   }, [rules, ruleSearchQuery, selectedRuleCategory]);
 
-  const saveGeneralSettings = () => {
+  const saveGeneralSettings = async () => {
     try {
       localStorage.setItem("easycode_custom_instructions", customInstructions);
       localStorage.setItem("easycode_pref_lang", preferredLanguage);
       localStorage.setItem("easycode_speech_engine", speechEngine);
       localStorage.setItem("easycode_speech_fallback", String(speechFallback));
-      toast.success("Settings saved successfully");
+      localStorage.setItem("easycode_workspace_scale", String(workspaceScale));
+
+      // Broadcast real-time change to open workspace
+      window.dispatchEvent(
+        new CustomEvent("easycode-preference-change", {
+          detail: {
+            workspaceScale,
+            preferredLanguage,
+            customInstructions,
+          },
+        })
+      );
+
+      // Cloud sync to Supabase
+      if (session?.user) {
+        try {
+          await fetch("/api/user/preferences", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              preferences: {
+                workspaceScale,
+                preferredLanguage,
+                customInstructions,
+                speechEngine,
+                speechFallback,
+                privacyMode,
+                useMemory,
+              },
+            }),
+          });
+        } catch (e) {}
+      }
+
+      toast.success("Preferences & scale settings saved successfully");
     } catch (e) {
       toast.error("Could not save settings");
     }
@@ -3258,6 +3337,122 @@ export default function SettingsView({ currentModel, onModelSelect }: SettingsVi
                     {lang}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Workspace Scaling */}
+            <div className="space-y-2.5 pt-1">
+              <div>
+                <label className="text-xs font-medium text-[#1C1B19] dark:text-[#EDEDEB] block">
+                  Workspace Scale
+                </label>
+                <p className="text-[11px] text-[#7A756C] dark:text-[#8C8880]">
+                  Scale the entire workspace layout, typography, and controls linearly.
+                </p>
+              </div>
+
+              {/* Single-Row Preset Buttons (Clean selected styling without yellow dot) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {[
+                  { key: "small", label: "Small", scale: 1.0 },
+                  { key: "medium", label: "Medium", scale: 1.12 },
+                  { key: "high", label: "High", scale: 1.25 },
+                  { key: "custom", label: "Custom", scale: customScale },
+                ].map((preset) => {
+                  const isSelected =
+                    preset.key === "custom"
+                      ? scaleMode === "custom"
+                      : scaleMode === preset.key && Math.abs(workspaceScale - preset.scale) < 0.01;
+
+                  return (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() => {
+                        if (preset.key === "custom") {
+                          setScaleMode("custom");
+                          setWorkspaceScale(customScale);
+                          try {
+                            localStorage.setItem("easycode_workspace_scale", String(customScale));
+                            window.dispatchEvent(
+                              new CustomEvent("easycode-preference-change", {
+                                detail: { workspaceScale: customScale },
+                              })
+                            );
+                          } catch (e) {}
+                        } else {
+                          setScaleMode(preset.key as any);
+                          setWorkspaceScale(preset.scale);
+                          try {
+                            localStorage.setItem("easycode_workspace_scale", String(preset.scale));
+                            window.dispatchEvent(
+                              new CustomEvent("easycode-preference-change", {
+                                detail: { workspaceScale: preset.scale },
+                              })
+                            );
+                          } catch (e) {}
+                        }
+                      }}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-[#3A3733] text-white dark:bg-white dark:text-[#1C1B19] border-transparent font-semibold shadow-2xs"
+                          : "border-[#DFDAD0] dark:border-[#383532] bg-white/50 dark:bg-[#282624]/50 text-[#524E48] dark:text-[#A8A49D] hover:bg-white dark:hover:bg-[#33312E]"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Expanding Custom Slider when Custom is selected */}
+              {scaleMode === "custom" && (
+                <div className="p-3 rounded-xl bg-[#ECE8DF]/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532] space-y-2 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between text-xs text-[#524E48] dark:text-[#A8A49D]">
+                    <span>Custom Scale</span>
+                    <span className="font-mono font-bold text-neutral-900 dark:text-white bg-black/[0.05] dark:bg-white/[0.08] px-2 py-0.5 rounded">
+                      {Math.round(workspaceScale * 100)}%
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] text-neutral-400 font-mono">85%</span>
+                    <input
+                      type="range"
+                      min="0.85"
+                      max="1.40"
+                      step="0.01"
+                      value={workspaceScale}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 1.0;
+                        setWorkspaceScale(val);
+                        setCustomScale(val);
+                        try {
+                          localStorage.setItem("easycode_workspace_scale", String(val));
+                          window.dispatchEvent(
+                            new CustomEvent("easycode-preference-change", {
+                              detail: { workspaceScale: val },
+                            })
+                          );
+                        } catch (err) {}
+                      }}
+                      className="flex-1 accent-amber-500 cursor-pointer h-1.5 bg-neutral-300 dark:bg-neutral-700 rounded-lg"
+                    />
+                    <span className="text-[11px] text-neutral-400 font-mono">140%</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Live Typography Preview Card */}
+              <div className="p-3 rounded-xl bg-[#ECE8DF]/40 dark:bg-[#242321]/40 border border-[#DFDAD0] dark:border-[#383532]">
+                <div className="text-[10px] uppercase font-mono tracking-wider text-neutral-500 mb-1.5">
+                  Live Preview ({Math.round(workspaceScale * 100)}% scale)
+                </div>
+                <div
+                  style={{ fontSize: `${workspaceScale}rem`, lineHeight: "1.55" }}
+                  className="text-neutral-800 dark:text-neutral-200 transition-all font-sans"
+                >
+                  EasyCode AI implements optimal graph traversals with <code className="px-1 py-0.5 rounded bg-black/[0.06] dark:bg-white/[0.08] font-mono text-[0.9em] text-amber-600 dark:text-amber-400">O(V + E)</code> time complexity.
+                </div>
               </div>
             </div>
 
