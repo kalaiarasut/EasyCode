@@ -1259,6 +1259,7 @@ export default function ProblemPageAiTab({
               key={`think-${i}`}
               thinkingContent={thinkText}
               isStreaming={isSubmitting && !isClosed}
+              verb={currentVerb}
             />
           );
         }
@@ -1967,6 +1968,7 @@ export default function ProblemPageAiTab({
                   <ThinkingProcessBlock
                     thinkingContent="Synthesizing algorithmic logic and analyzing edge cases..."
                     isStreaming={true}
+                    verb={currentVerb}
                   />
 
                   <button

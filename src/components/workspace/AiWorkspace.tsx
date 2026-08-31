@@ -1364,6 +1364,7 @@ export default function AiWorkspace() {
               key={`think-${i}`}
               thinkingContent={thinkText}
               isStreaming={isLoading && !isClosed}
+              verb={currentVerb}
             />
           );
         }
@@ -3323,6 +3324,7 @@ export default function AiWorkspace() {
                                 <ThinkingProcessBlock
                                   thinkingContent="Synthesizing algorithmic logic and formulating solution..."
                                   isStreaming={true}
+                                  verb={currentVerb}
                                 />
                               )}
                             </div>
